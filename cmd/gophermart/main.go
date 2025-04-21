@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
 	"github.com/AlenaMolokova/diploma/internal/config"
 	"github.com/AlenaMolokova/diploma/internal/routes"
 	"github.com/AlenaMolokova/diploma/internal/storage"
@@ -36,7 +37,8 @@ func main() {
 
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
-		log.Fatal("JWT_SECRET is required")
+		jwtSecret = "default-gophermart-secret-key-1234567890"
+		log.Println("JWT_SECRET not set, using default value")
 	}
 	log.Printf("JWT_SECRET loaded: %q", jwtSecret)
 
