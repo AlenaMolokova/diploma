@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 	"database/sql"
+
 	"github.com/AlenaMolokova/diploma/internal/utils"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
@@ -66,10 +67,7 @@ func (h *LoginHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Authorization", "Bearer "+tokenString)
 	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(map[string]string{"token": tokenString}); err != nil {
-		log.Printf("Failed to encode token response: %v", err)
-	}
 	log.Printf("User %s authenticated", req.Login)
 }

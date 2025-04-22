@@ -96,10 +96,7 @@ func (h *RegisterHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Authorization", "Bearer "+tokenString)
 	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(map[string]string{"token": tokenString}); err != nil {
-		log.Printf("Failed to encode token response: %v", err)
-	}
 	log.Printf("User %s registered successfully, user_id: %d", req.Login, userID)
 }
