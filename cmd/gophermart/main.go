@@ -15,6 +15,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+
+
 func main() {
 	cfg, err := config.NewConfig()
 	if err != nil {
