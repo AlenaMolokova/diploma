@@ -26,7 +26,7 @@ func SetupRoutes(store *storage.Storage, jwtSecret, loyaltyURL string) *chi.Mux 
 	r.Post(UserPrefix+LoginPath, handlers.NewLoginHandler(store, jwtSecret).ServeHTTP)
 
 	r.Group(func(r chi.Router) {
-		r.Use(middleware.Auth(jwtSecret))
+		r.Use(middleware.AuthMiddleware(jwtSecret)) // Исправлено: Auth → AuthMiddleware
 		r.Post(UserPrefix+OrdersPath, handlers.NewOrderHandler(store, store, loyaltyClient).ServeHTTP)
 		r.Get(UserPrefix+OrdersPath, handlers.NewOrderGetHandler(store).ServeHTTP)
 		r.Get(UserPrefix+BalancePath, handlers.NewBalanceHandler(store).ServeHTTP)

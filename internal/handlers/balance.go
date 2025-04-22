@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+
+	"github.com/AlenaMolokova/diploma/internal/middleware"
 	"github.com/AlenaMolokova/diploma/internal/utils"
 )
 
@@ -16,7 +18,7 @@ func NewBalanceHandler(store BalanceStorage) *BalanceHandler {
 }
 
 func (h *BalanceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value("user_id").(int64)
+	userID, ok := middleware.GetUserID(r)
 	if !ok {
 		log.Printf("Unauthorized: missing user_id in context")
 		utils.WriteJSONError(w, http.StatusUnauthorized, "Unauthorized")

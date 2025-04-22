@@ -1,14 +1,15 @@
 package handlers
 
 import (
-	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"regexp"
 	"strings"
 	"time"
+
 	"github.com/AlenaMolokova/diploma/internal/loyalty"
+	"github.com/AlenaMolokova/diploma/internal/middleware"
 	"github.com/AlenaMolokova/diploma/internal/storage"
 	"github.com/AlenaMolokova/diploma/internal/utils"
 	"github.com/jackc/pgx/v5"
@@ -45,7 +46,7 @@ func NewOrderHandler(store OrderStorage, balance BalanceStorage, loyalty *loyalt
 }
 
 func (h *OrderHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value("user_id").(int64)
+	userID, ok := middleware.GetUserID(r)
 	if !ok {
 		log.Printf("Unauthorized: missing user_id in context")
 		utils.WriteJSONError(w, http.StatusUnauthorized, "Unauthorized")
@@ -144,10 +145,6 @@ func (h *OrderHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				log.Printf("Accrued %.2f points for user %d for order %s, new balance: %.2f", loyaltyResp.Accrual, userID, number, newBalance)
 			}
 		}
-	} else if err.Error() == "rate limit exceeded" {
-		log.Printf("Loyalty rate limit for order %s: %v", number, err)
-		utils.WriteJSONError(w, http.StatusTooManyRequests, fmt.Sprintf("Rate limit exceeded: %v", err))
-		return
 	} else {
 		log.Printf("Loyalty check failed for order %s: %v, proceeding with NEW status", number, err)
 	}

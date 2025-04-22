@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+
+	"github.com/AlenaMolokova/diploma/internal/middleware"
 	"github.com/AlenaMolokova/diploma/internal/utils"
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -17,14 +19,14 @@ func NewOrderGetHandler(store OrderStorage) *OrderGetHandler {
 }
 
 type OrderResponse struct {
-	Number     string              `json:"number"`
-	Status     string              `json:"status"`
-	Accrual    float64             `json:"accrual,omitempty"`
-	UploadedAt pgtype.Timestamptz  `json:"uploaded_at"`
+	Number     string             `json:"number"`
+	Status     string             `json:"status"`
+	Accrual    float64            `json:"accrual,omitempty"`
+	UploadedAt pgtype.Timestamptz `json:"uploaded_at"`
 }
 
 func (h *OrderGetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value("user_id").(int64)
+	userID, ok := middleware.GetUserID(r)
 	if !ok {
 		log.Printf("Unauthorized: missing user_id in context")
 		utils.WriteJSONError(w, http.StatusUnauthorized, "Unauthorized")

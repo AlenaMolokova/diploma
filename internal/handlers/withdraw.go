@@ -1,12 +1,13 @@
 package handlers
 
 import (
-	
 	"encoding/json"
 	"log"
 	"net/http"
 	"regexp"
 	"time"
+
+	"github.com/AlenaMolokova/diploma/internal/middleware"
 	"github.com/AlenaMolokova/diploma/internal/storage"
 	"github.com/AlenaMolokova/diploma/internal/utils"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -22,7 +23,7 @@ func NewWithdrawHandler(store WithdrawalStorage, balance BalanceStorage) *Withdr
 }
 
 func (h *WithdrawHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value("user_id").(int64)
+	userID, ok := middleware.GetUserID(r)
 	if !ok {
 		log.Printf("Unauthorized: missing user_id in context")
 		utils.WriteJSONError(w, http.StatusUnauthorized, "Unauthorized")

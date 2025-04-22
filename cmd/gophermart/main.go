@@ -12,10 +12,11 @@ import (
 	"github.com/AlenaMolokova/diploma/internal/config"
 	"github.com/AlenaMolokova/diploma/internal/routes"
 	"github.com/AlenaMolokova/diploma/internal/storage"
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-
 
 func main() {
 	cfg, err := config.NewConfig()
@@ -25,6 +26,15 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	m, err := migrate.New("file://migrations", cfg.DatabaseURI)
+	if err != nil {
+		log.Fatalf("Failed to initialize migrate: %v", err)
+	}
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		log.Fatalf("Failed to apply migrations: %v", err)
+	}
+	log.Println("Migrations applied successfully")
 
 	pool, err := pgxpool.New(ctx, cfg.DatabaseURI)
 	if err != nil {
