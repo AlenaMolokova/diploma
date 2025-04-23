@@ -5,15 +5,16 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/AlenaMolokova/diploma/internal/models"
 	"github.com/AlenaMolokova/diploma/internal/middleware"
 	"github.com/AlenaMolokova/diploma/internal/utils"
 )
 
 type BalanceHandler struct {
-	store BalanceStorage
+	store models.BalanceStorage
 }
 
-func NewBalanceHandler(store BalanceStorage) *BalanceHandler {
+func NewBalanceHandler(store models.BalanceStorage) *BalanceHandler {
 	return &BalanceHandler{store: store}
 }
 

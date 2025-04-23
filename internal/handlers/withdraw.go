@@ -8,17 +8,17 @@ import (
 	"time"
 
 	"github.com/AlenaMolokova/diploma/internal/middleware"
-	"github.com/AlenaMolokova/diploma/internal/storage"
+	"github.com/AlenaMolokova/diploma/internal/models"
 	"github.com/AlenaMolokova/diploma/internal/utils"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type WithdrawHandler struct {
-	store   WithdrawalStorage
-	balance BalanceStorage
+	store   models.WithdrawalStorage
+	balance models.BalanceStorage
 }
 
-func NewWithdrawHandler(store WithdrawalStorage, balance BalanceStorage) *WithdrawHandler {
+func NewWithdrawHandler(store models.WithdrawalStorage, balance models.BalanceStorage) *WithdrawHandler {
 	return &WithdrawHandler{store: store, balance: balance}
 }
 
@@ -71,14 +71,14 @@ func (h *WithdrawHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	withdrawal := storage.Withdrawal{
-		UserID:      pgtype.Int8{Int64: userID, Valid: true},
+	withdrawal := models.Withdrawal{
+		UserID:      userID,
 		OrderNumber: req.Order,
-		Sum:         req.Sum,
+		Sum:         pgtype.Float8{Float64: req.Sum, Valid: true},
 		ProcessedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
 	}
 
-	if err := h.balance.UpdateBalance(r.Context(), userID, -req.Sum); err != nil {
+	if err := h.balance.UpdateBalance(r.Context(), userID, current.Float64-req.Sum); err != nil {
 		log.Printf("Failed to update balance for user %d: %v", userID, err)
 		utils.WriteJSONError(w, http.StatusInternalServerError, "Internal server error")
 		return

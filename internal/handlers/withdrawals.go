@@ -6,15 +6,16 @@ import (
 	"net/http"
 
 	"github.com/AlenaMolokova/diploma/internal/middleware"
+	"github.com/AlenaMolokova/diploma/internal/models"
 	"github.com/AlenaMolokova/diploma/internal/utils"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type WithdrawalsHandler struct {
-	store WithdrawalStorage
+	store models.WithdrawalStorage
 }
 
-func NewWithdrawalsHandler(store WithdrawalStorage) *WithdrawalsHandler {
+func NewWithdrawalsHandler(store models.WithdrawalStorage) *WithdrawalsHandler {
 	return &WithdrawalsHandler{store: store}
 }
 
@@ -50,7 +51,7 @@ func (h *WithdrawalsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for i, w := range withdrawals {
 		response[i] = WithdrawalResponse{
 			Order:       w.OrderNumber,
-			Sum:         w.Sum,
+			Sum:         w.Sum.Float64,
 			ProcessedAt: w.ProcessedAt,
 		}
 	}

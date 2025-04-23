@@ -1,8 +1,11 @@
+// storage.go
 package storage
 
 import (
 	"context"
 	"errors"
+
+	"github.com/AlenaMolokova/diploma/internal/models"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -35,17 +38,26 @@ func (s *Storage) CreateUser(ctx context.Context, login, password string) (int64
 	return id, nil
 }
 
-func (s *Storage) GetUserByLogin(ctx context.Context, login string) (User, error) {
-	return s.queries.GetUserByLogin(ctx, login)
+func (s *Storage) GetUserByLogin(ctx context.Context, login string) (models.User, error) {
+	user, err := s.queries.GetUserByLogin(ctx, login)
+	if err != nil {
+		return models.User{}, err
+	}
+	return models.User{
+		ID:        user.ID,
+		Login:     user.Login,
+		Password:  user.Password,
+		Balance:   user.Balance,
+		Withdrawn: user.Withdrawn,
+	}, nil
 }
 
 func (s *Storage) GetBalance(ctx context.Context, userID int64) (pgtype.Float8, pgtype.Float8, error) {
-	bal, err := s.queries.GetUserBalance(ctx, pgtype.Int8{Int64: userID, Valid: true})
+	bal, err := s.queries.GetUserBalance(ctx, userID)
 	if err != nil {
 		return pgtype.Float8{}, pgtype.Float8{}, err
 	}
-	withdrawn := pgtype.Float8{Float64: bal.Withdrawn, Valid: true}
-	return bal.Balance, withdrawn, nil
+	return bal.Balance, bal.Withdrawn, nil
 }
 
 func (s *Storage) UpdateBalance(ctx context.Context, userID int64, amount float64) error {
@@ -56,46 +68,38 @@ func (s *Storage) UpdateBalance(ctx context.Context, userID int64, amount float6
 	})
 }
 
-func (s *Storage) CreateOrder(ctx context.Context, order Order) error {
+func (s *Storage) CreateOrder(ctx context.Context, order models.Order) error {
 	return s.queries.CreateOrder(ctx, CreateOrderParams{
-		UserID:     order.UserID,
+		UserID:     pgtype.Int8{Int64: order.UserID, Valid: true},
 		Number:     order.Number,
 		Status:     order.Status,
 		UploadedAt: order.UploadedAt,
 	})
 }
 
-func (s *Storage) GetOrderByNumber(ctx context.Context, number string) (Order, error) {
-	return s.queries.GetOrderByNumber(ctx, number)
+func (s *Storage) GetOrderByNumber(ctx context.Context, number string) (models.Order, error) {
+	order, err := s.queries.GetOrderByNumber(ctx, number)
+	if err != nil {
+		return models.Order{}, err
+	}
+	return models.Order{
+		ID:         order.ID,
+		UserID:     order.UserID.Int64,
+		Number:     order.Number,
+		Status:     order.Status,
+		Accrual:    order.Accrual,
+		UploadedAt: order.UploadedAt,
+	}, nil
 }
 
-func (s *Storage) GetOrdersByUserID(ctx context.Context, userID int64) ([]Order, error) {
-	var rows []GetOrdersByUserRow
-	var err error
-	if userID == 0 {
-		allOrders, err := s.queries.GetAllOrders(ctx)
-		if err != nil {
-			return nil, err
-		}
-		rows = make([]GetOrdersByUserRow, len(allOrders))
-		for i, order := range allOrders {
-			rows[i] = GetOrdersByUserRow{
-				Number:     order.Number,
-				Status:     order.Status,
-				Accrual:    order.Accrual,
-				UploadedAt: order.UploadedAt,
-			}
-		}
-	} else {
-		rows, err = s.queries.GetOrdersByUser(ctx, pgtype.Int8{Int64: userID, Valid: true})
-		if err != nil {
-			return nil, err
-		}
+func (s *Storage) GetOrdersByUserID(ctx context.Context, userID int64) ([]models.Order, error) {
+	rows, err := s.queries.GetOrdersByUser(ctx, pgtype.Int8{Int64: userID, Valid: true})
+	if err != nil {
+		return nil, err
 	}
-	orders := make([]Order, len(rows))
+	orders := make([]models.Order, len(rows))
 	for i, row := range rows {
-		orders[i] = Order{
-			UserID:     pgtype.Int8{Int64: userID, Valid: userID != 0},
+		orders[i] = models.Order{
 			Number:     row.Number,
 			Status:     row.Status,
 			Accrual:    row.Accrual,
@@ -105,36 +109,55 @@ func (s *Storage) GetOrdersByUserID(ctx context.Context, userID int64) ([]Order,
 	return orders, nil
 }
 
-func (s *Storage) CreateWithdrawal(ctx context.Context, withdrawal Withdrawal) error {
+func (s *Storage) GetAllOrders(ctx context.Context) ([]models.Order, error) {
+	rows, err := s.queries.GetAllOrders(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orders := make([]models.Order, len(rows))
+	for i, row := range rows {
+		orders[i] = models.Order{
+			ID:         row.ID,
+			UserID:     row.UserID.Int64,
+			Number:     row.Number,
+			Status:     row.Status,
+			Accrual:    row.Accrual,
+			UploadedAt: row.UploadedAt,
+		}
+	}
+	return orders, nil
+}
+
+func (s *Storage) CreateWithdrawal(ctx context.Context, withdrawal models.Withdrawal) error {
 	return s.queries.CreateWithdrawal(ctx, CreateWithdrawalParams{
-		UserID:      withdrawal.UserID,
+		UserID:      pgtype.Int8{Int64: withdrawal.UserID, Valid: true},
 		OrderNumber: withdrawal.OrderNumber,
-		Sum:         withdrawal.Sum,
+		Sum:         withdrawal.Sum.Float64,
 		ProcessedAt: withdrawal.ProcessedAt,
 	})
 }
 
-func (s *Storage) GetWithdrawalsByUserID(ctx context.Context, userID int64) ([]Withdrawal, error) {
+func (s *Storage) GetWithdrawalsByUserID(ctx context.Context, userID int64) ([]models.Withdrawal, error) {
 	rows, err := s.queries.GetWithdrawalsByUser(ctx, pgtype.Int8{Int64: userID, Valid: true})
 	if err != nil {
 		return nil, err
 	}
-	withdrawals := make([]Withdrawal, len(rows))
+	withdrawals := make([]models.Withdrawal, len(rows))
 	for i, row := range rows {
-		withdrawals[i] = Withdrawal{
-			UserID:      pgtype.Int8{Int64: userID, Valid: true},
+		withdrawals[i] = models.Withdrawal{
 			OrderNumber: row.OrderNumber,
-			Sum:         row.Sum,
+			Sum:         pgtype.Float8{Float64: row.Sum, Valid: true},
 			ProcessedAt: row.ProcessedAt,
 		}
 	}
 	return withdrawals, nil
 }
 
-func (s *Storage) UpdateOrder(ctx context.Context, number string, status string, accrual float64) error {
+func (s *Storage) UpdateOrder(ctx context.Context, order models.Order) error {
 	return s.queries.UpdateOrder(ctx, UpdateOrderParams{
-		Number:  number,
-		Status:  status,
-		Accrual: pgtype.Float8{Float64: accrual, Valid: true},
+		Number:     order.Number,
+		Status:     order.Status,
+		Accrual:    order.Accrual,
+		UploadedAt: order.UploadedAt,
 	})
 }

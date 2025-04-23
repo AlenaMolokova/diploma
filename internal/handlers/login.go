@@ -8,16 +8,17 @@ import (
 	"database/sql"
 
 	"github.com/AlenaMolokova/diploma/internal/utils"
+	"github.com/AlenaMolokova/diploma/internal/models"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
 type LoginHandler struct {
-	store     UserStorage
+	store     models.UserStorage
 	jwtSecret string
 }
 
-func NewLoginHandler(store UserStorage, jwtSecret string) *LoginHandler {
+func NewLoginHandler(store models.UserStorage, jwtSecret string) *LoginHandler {
 	return &LoginHandler{store: store, jwtSecret: jwtSecret}
 }
 

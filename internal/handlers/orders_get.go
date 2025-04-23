@@ -7,14 +7,15 @@ import (
 
 	"github.com/AlenaMolokova/diploma/internal/middleware"
 	"github.com/AlenaMolokova/diploma/internal/utils"
+	"github.com/AlenaMolokova/diploma/internal/models"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type OrderGetHandler struct {
-	store OrderStorage
+	store models.OrderStorage
 }
 
-func NewOrderGetHandler(store OrderStorage) *OrderGetHandler {
+func NewOrderGetHandler(store models.OrderStorage) *OrderGetHandler {
 	return &OrderGetHandler{store: store}
 }
 

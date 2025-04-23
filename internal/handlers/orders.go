@@ -10,7 +10,7 @@ import (
 
 	"github.com/AlenaMolokova/diploma/internal/loyalty"
 	"github.com/AlenaMolokova/diploma/internal/middleware"
-	"github.com/AlenaMolokova/diploma/internal/storage"
+	"github.com/AlenaMolokova/diploma/internal/models"
 	"github.com/AlenaMolokova/diploma/internal/utils"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -36,12 +36,12 @@ func LuhnCheck(number string) bool {
 }
 
 type OrderHandler struct {
-	store   OrderStorage
-	balance BalanceStorage
+	store   models.OrderStorage
+	balance models.BalanceStorage
 	loyalty *loyalty.Client
 }
 
-func NewOrderHandler(store OrderStorage, balance BalanceStorage, loyalty *loyalty.Client) *OrderHandler {
+func NewOrderHandler(store models.OrderStorage, balance models.BalanceStorage, loyalty *loyalty.Client) *OrderHandler {
 	return &OrderHandler{store: store, balance: balance, loyalty: loyalty}
 }
 
@@ -80,7 +80,7 @@ func (h *OrderHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	existingOrder, err := h.store.GetOrderByNumber(r.Context(), number)
 	if err == nil {
-		if existingOrder.UserID.Valid && existingOrder.UserID.Int64 == userID {
+		if existingOrder.UserID == userID {
 			log.Printf("Order %s already exists for user %d", number, userID)
 			w.Header().Set("Content-Type", "text/plain")
 			w.WriteHeader(http.StatusOK)
@@ -96,8 +96,8 @@ func (h *OrderHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	order := storage.Order{
-		UserID:     pgtype.Int8{Int64: userID, Valid: true},
+	order := models.Order{
+		UserID:     userID,
 		Number:     number,
 		Status:     "NEW",
 		UploadedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
@@ -107,7 +107,7 @@ func (h *OrderHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if pgErr, ok := err.(*pgconn.PgError); ok && pgErr.Code == "23505" {
 			existingOrder, err := h.store.GetOrderByNumber(r.Context(), number)
 			if err == nil {
-				if existingOrder.UserID.Valid && existingOrder.UserID.Int64 == userID {
+				if existingOrder.UserID == userID {
 					log.Printf("Order %s already exists for user %d after retry", number, userID)
 					w.Header().Set("Content-Type", "text/plain")
 					w.WriteHeader(http.StatusOK)
@@ -137,13 +137,16 @@ func (h *OrderHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 				newBalance := current.Float64 + loyaltyResp.Accrual
-				if err := h.balance.UpdateBalance(r.Context(), userID, loyaltyResp.Accrual); err != nil {
+				if err := h.balance.UpdateBalance(r.Context(), userID, newBalance); err != nil {
 					log.Printf("Failed to update balance for user %d: %v", userID, err)
 					utils.WriteJSONError(w, http.StatusInternalServerError, "Internal server error")
 					return
 				}
 				log.Printf("Accrued %.2f points for user %d for order %s, new balance: %.2f", loyaltyResp.Accrual, userID, number, newBalance)
 			}
+		}
+		if err := h.store.UpdateOrder(r.Context(), order); err != nil {
+			log.Printf("Failed to update order %s: %v", number, err)
 		}
 	} else {
 		log.Printf("Loyalty check failed for order %s: %v, proceeding with NEW status", number, err)
