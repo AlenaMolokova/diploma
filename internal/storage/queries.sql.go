@@ -73,6 +73,40 @@ func (q *Queries) CreateWithdrawal(ctx context.Context, arg CreateWithdrawalPara
 	return err
 }
 
+const getAllOrders = `-- name: GetAllOrders :many
+SELECT id, user_id, number, status, accrual, uploaded_at
+FROM orders
+WHERE status != 'PROCESSED'
+ORDER BY uploaded_at DESC
+`
+
+func (q *Queries) GetAllOrders(ctx context.Context) ([]Order, error) {
+	rows, err := q.db.Query(ctx, getAllOrders)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Order
+	for rows.Next() {
+		var i Order
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Number,
+			&i.Status,
+			&i.Accrual,
+			&i.UploadedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getOrderByNumber = `-- name: GetOrderByNumber :one
 SELECT id, user_id, number, status, accrual, uploaded_at
 FROM orders
@@ -133,19 +167,19 @@ func (q *Queries) GetOrdersByUser(ctx context.Context, userID pgtype.Int8) ([]Ge
 }
 
 const getUserBalance = `-- name: GetUserBalance :one
-SELECT balance, withdrawn
+SELECT balance,
+       COALESCE((SELECT SUM(sum) FROM withdrawals WHERE user_id = $1), 0)::DOUBLE PRECISION as withdrawn
 FROM users
 WHERE id = $1
-FOR UPDATE
 `
 
 type GetUserBalanceRow struct {
 	Balance   pgtype.Float8 `json:"balance"`
-	Withdrawn pgtype.Float8 `json:"withdrawn"`
+	Withdrawn float64       `json:"withdrawn"`
 }
 
-func (q *Queries) GetUserBalance(ctx context.Context, id int64) (GetUserBalanceRow, error) {
-	row := q.db.QueryRow(ctx, getUserBalance, id)
+func (q *Queries) GetUserBalance(ctx context.Context, userID pgtype.Int8) (GetUserBalanceRow, error) {
+	row := q.db.QueryRow(ctx, getUserBalance, userID)
 	var i GetUserBalanceRow
 	err := row.Scan(&i.Balance, &i.Withdrawn)
 	return i, err
@@ -217,5 +251,22 @@ type UpdateBalanceParams struct {
 
 func (q *Queries) UpdateBalance(ctx context.Context, arg UpdateBalanceParams) error {
 	_, err := q.db.Exec(ctx, updateBalance, arg.ID, arg.Balance, arg.Withdrawn)
+	return err
+}
+
+const updateOrder = `-- name: UpdateOrder :exec
+UPDATE orders
+SET status = $2, accrual = $3
+WHERE number = $1
+`
+
+type UpdateOrderParams struct {
+	Number  string        `json:"number"`
+	Status  string        `json:"status"`
+	Accrual pgtype.Float8 `json:"accrual"`
+}
+
+func (q *Queries) UpdateOrder(ctx context.Context, arg UpdateOrderParams) error {
+	_, err := q.db.Exec(ctx, updateOrder, arg.Number, arg.Status, arg.Accrual)
 	return err
 }

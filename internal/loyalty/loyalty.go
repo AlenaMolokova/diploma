@@ -1,64 +1,98 @@
 package loyalty
 
 import (
-    "context"
-    "encoding/json"
-    "errors"
-    "log"
-    "net/http"
-    "time"
+	"context"
+	"encoding/json"
+	"errors"
+	"log"
+	"net/http"
+	"time"
+
+	"github.com/AlenaMolokova/diploma/internal/storage"
 )
 
 type Client struct {
-    baseURL string
-    client  *http.Client
+	addr string
 }
 
-func NewClient(baseURL string) *Client {
-    return &Client{
-        baseURL: baseURL,
-        client:  &http.Client{Timeout: 10 * time.Second},
-    }
+func NewClient(addr string) *Client {
+	return &Client{addr: addr}
 }
 
-type LoyaltyResponse struct {
-    Order   string  `json:"order"`
-    Status  string  `json:"status"`
-    Accrual float64 `json:"accrual,omitempty"`
+type OrderResponse struct {
+	Order   string  `json:"order"`
+	Status  string  `json:"status"`
+	Accrual float64 `json:"accrual"`
 }
 
-func (c *Client) CheckOrder(ctx context.Context, number string) (LoyaltyResponse, error) {
-    req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/orders/"+number, nil)
-    if err != nil {
-        log.Printf("Failed to create loyalty request: %v", err)
-        return LoyaltyResponse{}, err
-    }
+func (c *Client) CheckOrder(ctx context.Context, number string) (OrderResponse, error) {
+	url := c.addr + "/api/orders/" + number
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return OrderResponse{}, err
+	}
 
-    resp, err := c.client.Do(req)
-    if err != nil {
-        log.Printf("Failed to query loyalty system for order %s: %v", number, err)
-        return LoyaltyResponse{}, err
-    }
-    defer resp.Body.Close()
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return OrderResponse{}, err
+	}
+	defer resp.Body.Close()
 
-    switch resp.StatusCode {
-    case http.StatusOK:
-        var loyaltyResp LoyaltyResponse
-        if err := json.NewDecoder(resp.Body).Decode(&loyaltyResp); err != nil {
-            log.Printf("Failed to decode loyalty response: %v", err)
-            return LoyaltyResponse{}, err
-        }
-        log.Printf("Loyalty system returned for order %s: status=%s, accrual=%.2f", number, loyaltyResp.Status, loyaltyResp.Accrual)
-        return loyaltyResp, nil
-    case http.StatusTooManyRequests:
-        retryAfter := resp.Header.Get("Retry-After")
-        log.Printf("Loyalty system rate limit exceeded for order %s, retry after %s", number, retryAfter)
-        return LoyaltyResponse{}, errors.New("rate limit exceeded")
-    case http.StatusNoContent:
-        log.Printf("Order %s not registered in loyalty system", number)
-        return LoyaltyResponse{}, errors.New("order not registered")
-    default:
-        log.Printf("Loyalty system returned status %d for order %s", resp.StatusCode, number)
-        return LoyaltyResponse{}, errors.New("loyalty system error")
-    }
+	if resp.StatusCode == http.StatusNoContent {
+		return OrderResponse{}, errors.New("order not found")
+	}
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return OrderResponse{}, errors.New("too many requests")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return OrderResponse{}, errors.New("unexpected status code")
+	}
+
+	var orderResp OrderResponse
+	if err := json.NewDecoder(resp.Body).Decode(&orderResp); err != nil {
+		return OrderResponse{}, err
+	}
+
+	return orderResp, nil
+}
+
+func (c *Client) StartOrderProcessing(ctx context.Context, store *storage.Storage) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			orders, err := store.GetOrdersByUserID(ctx, 0) // 0 для всех пользователей
+			if err != nil {
+				log.Printf("Failed to get orders: %v", err)
+				continue
+			}
+			for _, order := range orders {
+				if order.Status == "PROCESSED" {
+					continue
+				}
+				resp, err := c.CheckOrder(ctx, order.Number)
+				if err != nil {
+					log.Printf("Failed to check order %s: %v", order.Number, err)
+					continue
+				}
+				if resp.Status != order.Status {
+					err = store.UpdateOrder(ctx, order.Number, resp.Status, resp.Accrual)
+					if err != nil {
+						log.Printf("Failed to update order %s: %v", order.Number, err)
+						continue
+					}
+					if resp.Status == "PROCESSED" && resp.Accrual > 0 {
+						err = store.UpdateBalance(ctx, order.UserID.Int64, resp.Accrual)
+						if err != nil {
+							log.Printf("Failed to update balance for user %d: %v", order.UserID.Int64, err)
+						}
+					}
+					log.Printf("Order %s updated to status %s, accrual=%.2f", order.Number, resp.Status, resp.Accrual)
+				}
+			}
+		}
+	}
 }

@@ -40,11 +40,12 @@ func (s *Storage) GetUserByLogin(ctx context.Context, login string) (User, error
 }
 
 func (s *Storage) GetBalance(ctx context.Context, userID int64) (pgtype.Float8, pgtype.Float8, error) {
-	bal, err := s.queries.GetUserBalance(ctx, userID)
+	bal, err := s.queries.GetUserBalance(ctx, pgtype.Int8{Int64: userID, Valid: true})
 	if err != nil {
 		return pgtype.Float8{}, pgtype.Float8{}, err
 	}
-	return bal.Balance, bal.Withdrawn, nil
+	withdrawn := pgtype.Float8{Float64: bal.Withdrawn, Valid: true}
+	return bal.Balance, withdrawn, nil
 }
 
 func (s *Storage) UpdateBalance(ctx context.Context, userID int64, amount float64) error {
@@ -69,14 +70,32 @@ func (s *Storage) GetOrderByNumber(ctx context.Context, number string) (Order, e
 }
 
 func (s *Storage) GetOrdersByUserID(ctx context.Context, userID int64) ([]Order, error) {
-	rows, err := s.queries.GetOrdersByUser(ctx, pgtype.Int8{Int64: userID, Valid: true})
-	if err != nil {
-		return nil, err
+	var rows []GetOrdersByUserRow
+	var err error
+	if userID == 0 {
+		allOrders, err := s.queries.GetAllOrders(ctx)
+		if err != nil {
+			return nil, err
+		}
+		rows = make([]GetOrdersByUserRow, len(allOrders))
+		for i, order := range allOrders {
+			rows[i] = GetOrdersByUserRow{
+				Number:     order.Number,
+				Status:     order.Status,
+				Accrual:    order.Accrual,
+				UploadedAt: order.UploadedAt,
+			}
+		}
+	} else {
+		rows, err = s.queries.GetOrdersByUser(ctx, pgtype.Int8{Int64: userID, Valid: true})
+		if err != nil {
+			return nil, err
+		}
 	}
 	orders := make([]Order, len(rows))
 	for i, row := range rows {
 		orders[i] = Order{
-			UserID:     pgtype.Int8{Int64: userID, Valid: true},
+			UserID:     pgtype.Int8{Int64: userID, Valid: userID != 0},
 			Number:     row.Number,
 			Status:     row.Status,
 			Accrual:    row.Accrual,
@@ -110,4 +129,12 @@ func (s *Storage) GetWithdrawalsByUserID(ctx context.Context, userID int64) ([]W
 		}
 	}
 	return withdrawals, nil
+}
+
+func (s *Storage) UpdateOrder(ctx context.Context, number string, status string, accrual float64) error {
+	return s.queries.UpdateOrder(ctx, UpdateOrderParams{
+		Number:  number,
+		Status:  status,
+		Accrual: pgtype.Float8{Float64: accrual, Valid: true},
+	})
 }

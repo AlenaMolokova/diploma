@@ -5,16 +5,12 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
-	"time"
 
 	"github.com/AlenaMolokova/diploma/internal/config"
-	"github.com/AlenaMolokova/diploma/internal/routes"
+	"github.com/AlenaMolokova/diploma/internal/handlers"
+	"github.com/AlenaMolokova/diploma/internal/loyalty"
+	"github.com/AlenaMolokova/diploma/internal/middleware"
 	"github.com/AlenaMolokova/diploma/internal/storage"
-	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -24,61 +20,38 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	m, err := migrate.New("file://migrations", cfg.DatabaseURI)
-	if err != nil {
-		log.Fatalf("Failed to initialize migrate: %v", err)
-	}
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		log.Fatalf("Failed to apply migrations: %v", err)
-	}
-	log.Println("Migrations applied successfully")
-
-	pool, err := pgxpool.New(ctx, cfg.DatabaseURI)
+	db, err := pgxpool.New(context.Background(), cfg.DatabaseURI)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
-	defer pool.Close()
+	defer db.Close()
 
-	store, err := storage.NewStorage(pool)
+	store, err := storage.NewStorage(db)
 	if err != nil {
 		log.Fatalf("Failed to create storage: %v", err)
 	}
 
+	loyaltyClient := loyalty.NewClient(cfg.AccrualAddr)
+
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
-		jwtSecret = "default-gophermart-secret-key-1234567890"
-		log.Println("JWT_SECRET not set, using default value")
-	}
-	log.Printf("JWT_SECRET loaded: %q", jwtSecret)
-
-	r := router.SetupRoutes(store, jwtSecret, cfg.AccrualAddr)
-
-	srv := &http.Server{
-		Addr:    cfg.RunAddr,
-		Handler: r,
+		jwtSecret = "supersecretkey" 
+		log.Println("JWT_SECRET not set, using default")
 	}
 
-	go func() {
-		log.Printf("Starting Gophermart server on %s", cfg.RunAddr)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server failed: %v", err)
-		}
-	}()
+	mux := http.NewServeMux()
 
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	<-sigChan
+	mux.Handle("/api/user/register", handlers.NewRegisterHandler(store, jwtSecret))
+	mux.Handle("/api/user/login", handlers.NewLoginHandler(store, jwtSecret))
+	mux.Handle("/api/user/orders", middleware.AuthMiddleware(jwtSecret)(handlers.NewOrderHandler(store, store, loyaltyClient)))
+	mux.Handle("/api/user/balance", middleware.AuthMiddleware(jwtSecret)(handlers.NewBalanceHandler(store)))
+	mux.Handle("/api/user/balance/withdraw", middleware.AuthMiddleware(jwtSecret)(handlers.NewWithdrawHandler(store, store)))
+	mux.Handle("/api/user/withdrawals", middleware.AuthMiddleware(jwtSecret)(handlers.NewWithdrawalsHandler(store)))
 
-	log.Println("Shutting down server...")
-	shutdownCtx, shutdownCancel := context.WithTimeout(ctx, 5*time.Second)
-	defer shutdownCancel()
+	go loyaltyClient.StartOrderProcessing(context.Background(), store)
 
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Fatalf("Server shutdown failed: %v", err)
+	log.Printf("Starting Gophermart server on %s", cfg.RunAddr)
+	if err := http.ListenAndServe(cfg.RunAddr, mux); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
 	}
-	pool.Close()
-	log.Println("Server stopped")
 }
