@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/AlenaMolokova/diploma/internal/middleware"
@@ -13,13 +14,31 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type WithdrawHandler struct {
-	store   models.WithdrawalStorage
-	balance models.BalanceStorage
+func LuhnCheck(number string) bool {
+	var sum int
+	for i := len(number) - 1; i >= 0; i-- {
+		if number[i] < '0' || number[i] > '9' {
+			return false
+		}
+		digit := int(number[i] - '0')
+		if (len(number)-i)%2 == 0 {
+			digit *= 2
+			if digit > 9 {
+				digit -= 9
+			}
+		}
+		sum += digit
+	}
+	return sum%10 == 0
 }
 
-func NewWithdrawHandler(store models.WithdrawalStorage, balance models.BalanceStorage) *WithdrawHandler {
-	return &WithdrawHandler{store: store, balance: balance}
+type WithdrawHandler struct {
+	balance models.BalanceStorage
+	store   models.WithdrawalStorage
+}
+
+func NewWithdrawHandler(balance models.BalanceStorage, store models.WithdrawalStorage) *WithdrawHandler {
+	return &WithdrawHandler{balance: balance, store: store}
 }
 
 func (h *WithdrawHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -40,6 +59,7 @@ func (h *WithdrawHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	req.Order = strings.TrimSpace(req.Order)
 	if req.Order == "" || req.Sum <= 0 {
 		log.Printf("Invalid withdraw request: order=%s, sum=%.2f", req.Order, req.Sum)
 		utils.WriteJSONError(w, http.StatusBadRequest, "Order and positive sum are required")
@@ -47,27 +67,34 @@ func (h *WithdrawHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !regexp.MustCompile(`^\d+$`).MatchString(req.Order) {
-		log.Printf("Invalid order number format: %s", req.Order)
+		log.Printf("Invalid order number format: '%s'", req.Order)
 		utils.WriteJSONError(w, http.StatusUnprocessableEntity, "Order number must be digits")
 		return
 	}
 
 	if !LuhnCheck(req.Order) {
-		log.Printf("Order number %s failed Luhn check", req.Order)
+		log.Printf("Order number '%s' failed Luhn check", req.Order)
 		utils.WriteJSONError(w, http.StatusUnprocessableEntity, "Invalid order number")
 		return
 	}
 
-	current, _, err := h.balance.GetBalance(r.Context(), userID)
+	current, withdrawn, err := h.balance.GetBalance(r.Context(), userID)
 	if err != nil {
 		log.Printf("Failed to get balance for user %d: %v", userID, err)
 		utils.WriteJSONError(w, http.StatusInternalServerError, "Internal server error")
 		return
 	}
-
-	if !current.Valid || current.Float64 < req.Sum {
+	if current.Float64 < req.Sum {
 		log.Printf("Insufficient balance for user %d: current=%.2f, requested=%.2f", userID, current.Float64, req.Sum)
 		utils.WriteJSONError(w, http.StatusPaymentRequired, "Insufficient balance")
+		return
+	}
+
+	newBalance := current.Float64 - req.Sum
+	newWithdrawn := withdrawn.Float64 + req.Sum
+	if err := h.balance.UpdateBalance(r.Context(), userID, newBalance, newWithdrawn); err != nil {
+		log.Printf("Failed to update balance for user %d: %v", userID, err)
+		utils.WriteJSONError(w, http.StatusInternalServerError, "Internal server error")
 		return
 	}
 
@@ -77,13 +104,6 @@ func (h *WithdrawHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Sum:         pgtype.Float8{Float64: req.Sum, Valid: true},
 		ProcessedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
 	}
-
-	if err := h.balance.UpdateBalance(r.Context(), userID, current.Float64-req.Sum); err != nil {
-		log.Printf("Failed to update balance for user %d: %v", userID, err)
-		utils.WriteJSONError(w, http.StatusInternalServerError, "Internal server error")
-		return
-	}
-
 	if err := h.store.CreateWithdrawal(r.Context(), withdrawal); err != nil {
 		log.Printf("Failed to create withdrawal for user %d: %v", userID, err)
 		utils.WriteJSONError(w, http.StatusInternalServerError, "Internal server error")

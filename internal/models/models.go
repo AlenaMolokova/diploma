@@ -37,7 +37,7 @@ type UserStorage interface {
 
 type BalanceStorage interface {
 	GetBalance(ctx context.Context, userID int64) (pgtype.Float8, pgtype.Float8, error)
-	UpdateBalance(ctx context.Context, userID int64, amount float64) error
+	UpdateBalance(ctx context.Context, userID int64, amount float64, withdrawn ...float64) error
 }
 
 type WithdrawalStorage interface {

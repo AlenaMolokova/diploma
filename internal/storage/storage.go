@@ -1,4 +1,3 @@
-// storage.go
 package storage
 
 import (
@@ -65,6 +64,14 @@ func (s *Storage) UpdateBalance(ctx context.Context, userID int64, amount float6
 		ID:        userID,
 		Balance:   pgtype.Float8{Float64: amount, Valid: true},
 		Withdrawn: pgtype.Float8{Float64: 0, Valid: true},
+	})
+}
+
+func (s *Storage) UpdateBalanceWithWithdrawn(ctx context.Context, userID int64, balance, withdrawn float64) error {
+	return s.queries.UpdateBalance(ctx, UpdateBalanceParams{
+		ID:        userID,
+		Balance:   pgtype.Float8{Float64: balance, Valid: true},
+		Withdrawn: pgtype.Float8{Float64: withdrawn, Valid: true},
 	})
 }
 
