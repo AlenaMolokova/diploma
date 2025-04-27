@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/AlenaMolokova/diploma/internal/middleware"
-	"github.com/AlenaMolokova/diploma/internal/utils"
 	"github.com/AlenaMolokova/diploma/internal/models"
-	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/AlenaMolokova/diploma/internal/utils"
 )
 
 type OrderGetHandler struct {
@@ -20,10 +20,10 @@ func NewOrderGetHandler(store models.OrderStorage) *OrderGetHandler {
 }
 
 type OrderResponse struct {
-	Number     string             `json:"number"`
-	Status     string             `json:"status"`
-	Accrual    float64            `json:"accrual,omitempty"`
-	UploadedAt pgtype.Timestamptz `json:"uploaded_at"`
+	Number     string  `json:"number"`
+	Status     string  `json:"status"`
+	Accrual    float64 `json:"accrual,omitempty"`
+	UploadedAt string  `json:"uploaded_at"`
 }
 
 func (h *OrderGetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -53,7 +53,7 @@ func (h *OrderGetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		resp := OrderResponse{
 			Number:     order.Number,
 			Status:     order.Status,
-			UploadedAt: order.UploadedAt,
+			UploadedAt: order.UploadedAt.Time.Format(time.RFC3339),
 		}
 		if order.Accrual.Valid {
 			resp.Accrual = order.Accrual.Float64

@@ -74,6 +74,9 @@ func (h *OrderHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Rate limit exceeded for order %s: %v", orderNumber, err)
 			utils.WriteJSONError(w, http.StatusTooManyRequests, "Rate limit exceeded")
 			return
+		} else if errors.Is(err, loyalty.ErrOrderProcessing) {
+			log.Printf("Order %s is still processing in accrual", orderNumber)
+			loyaltyResp = nil
 		} else {
 			log.Printf("Failed to check loyalty for order %s: %v", orderNumber, err)
 			utils.WriteJSONError(w, http.StatusInternalServerError, "Internal server error")
@@ -98,28 +101,28 @@ func (h *OrderHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case "INVALID":
 			order.Status = loyaltyResp.Status
 		}
-
-		current, _, err := h.balance.GetBalance(r.Context(), userID)
-		if err != nil {
-			log.Printf("Failed to get balance for user %d: %v", userID, err)
-			utils.WriteJSONError(w, http.StatusInternalServerError, "Internal server error")
-			return
-		}
-
-		newBalance := current.Float64 + loyaltyResp.Accrual
-		if err := h.balance.UpdateBalance(r.Context(), userID, newBalance); err != nil {
-			log.Printf("Failed to update balance for user %d: %v", userID, err)
-		 utils.WriteJSONError(w, http.StatusInternalServerError, "Internal server error")
-			return
-		}
-
-		log.Printf("Accrued %.2f points for user %d for order %s, new balance: %.2f", loyaltyResp.Accrual, userID, orderNumber, newBalance)
 	}
 
 	if err := h.store.CreateOrder(r.Context(), order); err != nil {
 		log.Printf("Failed to create order %s for user %d: %v", orderNumber, userID, err)
 		utils.WriteJSONError(w, http.StatusInternalServerError, "Internal server error")
 		return
+	}
+
+	if loyaltyResp != nil && loyaltyResp.Status == "PROCESSED" {
+		current, _, err := h.balance.GetBalance(r.Context(), userID)
+		if err != nil {
+			log.Printf("Failed to get balance for user %d: %v", userID, err)
+			utils.WriteJSONError(w, http.StatusInternalServerError, "Internal server error")
+			return
+		}
+		newBalance := current.Float64 + loyaltyResp.Accrual
+		if err := h.balance.UpdateBalance(r.Context(), userID, newBalance); err != nil {
+			log.Printf("Failed to update balance for user %d: %v", userID, err)
+			utils.WriteJSONError(w, http.StatusInternalServerError, "Internal server error")
+			return
+		}
+		log.Printf("Accrued %.2f points for user %d for order %s, new balance: %.2f", loyaltyResp.Accrual, userID, orderNumber, newBalance)
 	}
 
 	log.Printf("Order %s created for user %d with status %s", orderNumber, userID, order.Status)

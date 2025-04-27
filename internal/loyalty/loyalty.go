@@ -3,6 +3,7 @@ package loyalty
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -13,8 +14,9 @@ import (
 )
 
 var (
-	ErrOrderNotFound = fmt.Errorf("order not found")
-	ErrRateLimit     = fmt.Errorf("rate limit exceeded")
+	ErrOrderNotFound   = fmt.Errorf("order not found")
+	ErrRateLimit       = fmt.Errorf("rate limit exceeded")
+	ErrOrderProcessing = fmt.Errorf("order is still processing")
 )
 
 type Client struct {
@@ -55,6 +57,8 @@ func (c *Client) CheckOrder(ctx context.Context, orderNumber string) (*accrualRe
 		return nil, ErrOrderNotFound
 	case http.StatusTooManyRequests:
 		return nil, ErrRateLimit
+	case http.StatusNoContent:
+		return nil, ErrOrderProcessing
 	default:
 		return nil, fmt.Errorf("unexpected status code for order %s: %d", orderNumber, resp.StatusCode)
 	}
@@ -83,6 +87,10 @@ func (c *Client) StartOrderProcessing(ctx context.Context, store models.OrderSto
 
 				resp, err := c.CheckOrder(ctx, order.Number)
 				if err != nil {
+					if errors.Is(err, ErrOrderProcessing) {
+						log.Printf("Order %s is still processing", order.Number)
+						continue
+					}
 					log.Printf("Failed to check order %s: %v", order.Number, err)
 					continue
 				}
@@ -99,7 +107,7 @@ func (c *Client) StartOrderProcessing(ctx context.Context, store models.OrderSto
 					continue
 				}
 
-				log.Printf("Updated order %s: status=%s, accrual=%f", order.Number, resp.Status, resp.Accrual)
+				log.Printf("Updated order %s: status=%s, accrual=%.2f", order.Number, resp.Status, resp.Accrual)
 			}
 		}
 	}
