@@ -12,6 +12,11 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+var (
+	ErrOrderNotFound = fmt.Errorf("order not found")
+	ErrRateLimit     = fmt.Errorf("rate limit exceeded")
+)
+
 type Client struct {
 	baseURL string
 	client  *http.Client
@@ -39,16 +44,20 @@ func (c *Client) CheckOrder(ctx context.Context, orderNumber string) (*accrualRe
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var accrual accrualResponse
+		if err := json.NewDecoder(resp.Body).Decode(&accrual); err != nil {
+			return nil, fmt.Errorf("failed to decode response for order %s: %v", orderNumber, err)
+		}
+		return &accrual, nil
+	case http.StatusNotFound:
+		return nil, ErrOrderNotFound
+	case http.StatusTooManyRequests:
+		return nil, ErrRateLimit
+	default:
 		return nil, fmt.Errorf("unexpected status code for order %s: %d", orderNumber, resp.StatusCode)
 	}
-
-	var accrual accrualResponse
-	if err := json.NewDecoder(resp.Body).Decode(&accrual); err != nil {
-		return nil, fmt.Errorf("failed to decode response for order %s: %v", orderNumber, err)
-	}
-
-	return &accrual, nil
 }
 
 func (c *Client) StartOrderProcessing(ctx context.Context, store models.OrderStorage) {

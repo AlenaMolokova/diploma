@@ -14,24 +14,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-func LuhnCheck(number string) bool {
-	var sum int
-	for i := len(number) - 1; i >= 0; i-- {
-		if number[i] < '0' || number[i] > '9' {
-			return false
-		}
-		digit := int(number[i] - '0')
-		if (len(number)-i)%2 == 0 {
-			digit *= 2
-			if digit > 9 {
-				digit -= 9
-			}
-		}
-		sum += digit
-	}
-	return sum%10 == 0
-}
-
 type WithdrawHandler struct {
 	balance models.BalanceStorage
 	store   models.WithdrawalStorage
@@ -72,7 +54,7 @@ func (h *WithdrawHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !LuhnCheck(req.Order) {
+	if !utils.LuhnCheck(req.Order) {
 		log.Printf("Order number '%s' failed Luhn check", req.Order)
 		utils.WriteJSONError(w, http.StatusUnprocessableEntity, "Invalid order number")
 		return

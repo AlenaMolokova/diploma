@@ -59,19 +59,15 @@ func (s *Storage) GetBalance(ctx context.Context, userID int64) (pgtype.Float8, 
 	return bal.Balance, bal.Withdrawn, nil
 }
 
-func (s *Storage) UpdateBalance(ctx context.Context, userID int64, amount float64) error {
+func (s *Storage) UpdateBalance(ctx context.Context, userID int64, amount float64, withdrawn ...float64) error {
+	var withdrawnVal float64
+	if len(withdrawn) > 0 {
+		withdrawnVal = withdrawn[0]
+	}
 	return s.queries.UpdateBalance(ctx, UpdateBalanceParams{
 		ID:        userID,
 		Balance:   pgtype.Float8{Float64: amount, Valid: true},
-		Withdrawn: pgtype.Float8{Float64: 0, Valid: true},
-	})
-}
-
-func (s *Storage) UpdateBalanceWithWithdrawn(ctx context.Context, userID int64, balance, withdrawn float64) error {
-	return s.queries.UpdateBalance(ctx, UpdateBalanceParams{
-		ID:        userID,
-		Balance:   pgtype.Float8{Float64: balance, Valid: true},
-		Withdrawn: pgtype.Float8{Float64: withdrawn, Valid: true},
+		Withdrawn: pgtype.Float8{Float64: withdrawnVal, Valid: true},
 	})
 }
 
