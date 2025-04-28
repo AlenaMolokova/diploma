@@ -1,8 +1,6 @@
 package router
 
 import (
-	"net/http"
-	
 	"github.com/AlenaMolokova/diploma/internal/handlers"
 	"github.com/AlenaMolokova/diploma/internal/loyalty"
 	"github.com/AlenaMolokova/diploma/internal/middleware"
