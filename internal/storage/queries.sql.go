@@ -12,14 +12,15 @@ import (
 )
 
 const createOrder = `-- name: CreateOrder :exec
-INSERT INTO orders (user_id, number, status, uploaded_at)
-VALUES ($1, $2, $3, $4)
+INSERT INTO orders (user_id, number, status, accrual, uploaded_at)
+VALUES ($1, $2, $3, $4, $5)
 `
 
 type CreateOrderParams struct {
 	UserID     pgtype.Int8        `json:"user_id"`
 	Number     string             `json:"number"`
 	Status     string             `json:"status"`
+	Accrual    pgtype.Float8      `json:"accrual"`
 	UploadedAt pgtype.Timestamptz `json:"uploaded_at"`
 }
 
@@ -28,6 +29,7 @@ func (q *Queries) CreateOrder(ctx context.Context, arg CreateOrderParams) error 
 		arg.UserID,
 		arg.Number,
 		arg.Status,
+		arg.Accrual,
 		arg.UploadedAt,
 	)
 	return err
@@ -238,18 +240,17 @@ func (q *Queries) GetWithdrawalsByUser(ctx context.Context, userID pgtype.Int8) 
 
 const updateBalance = `-- name: UpdateBalance :exec
 UPDATE users
-SET balance = balance + $2, withdrawn = withdrawn + $3
+SET balance = $2
 WHERE id = $1
 `
 
 type UpdateBalanceParams struct {
-	ID        int64         `json:"id"`
-	Balance   pgtype.Float8 `json:"balance"`
-	Withdrawn pgtype.Float8 `json:"withdrawn"`
+	ID      int64         `json:"id"`
+	Balance pgtype.Float8 `json:"balance"`
 }
 
 func (q *Queries) UpdateBalance(ctx context.Context, arg UpdateBalanceParams) error {
-	_, err := q.db.Exec(ctx, updateBalance, arg.ID, arg.Balance, arg.Withdrawn)
+	_, err := q.db.Exec(ctx, updateBalance, arg.ID, arg.Balance)
 	return err
 }
 
@@ -273,5 +274,21 @@ func (q *Queries) UpdateOrder(ctx context.Context, arg UpdateOrderParams) error 
 		arg.UploadedAt,
 		arg.Number,
 	)
+	return err
+}
+
+const updateWithdrawn = `-- name: UpdateWithdrawn :exec
+UPDATE users
+SET withdrawn = $2
+WHERE id = $1
+`
+
+type UpdateWithdrawnParams struct {
+	ID        int64         `json:"id"`
+	Withdrawn pgtype.Float8 `json:"withdrawn"`
+}
+
+func (q *Queries) UpdateWithdrawn(ctx context.Context, arg UpdateWithdrawnParams) error {
+	_, err := q.db.Exec(ctx, updateWithdrawn, arg.ID, arg.Withdrawn)
 	return err
 }

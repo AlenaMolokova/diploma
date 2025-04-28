@@ -116,12 +116,18 @@ func (h *OrderHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			utils.WriteJSONError(w, http.StatusInternalServerError, "Internal server error")
 			return
 		}
-		newBalance := current.Float64 + loyaltyResp.Accrual
+		
+		newBalance := loyaltyResp.Accrual
+		if current.Valid {
+			newBalance += current.Float64
+		}
+		
 		if err := h.balance.UpdateBalance(r.Context(), userID, newBalance); err != nil {
 			log.Printf("Failed to update balance for user %d: %v", userID, err)
 			utils.WriteJSONError(w, http.StatusInternalServerError, "Internal server error")
 			return
 		}
+		
 		log.Printf("Accrued %.2f points for user %d for order %s, new balance: %.2f", loyaltyResp.Accrual, userID, orderNumber, newBalance)
 	}
 

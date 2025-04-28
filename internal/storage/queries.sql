@@ -4,8 +4,8 @@ VALUES ($1, $2)
 RETURNING id;
 
 -- name: CreateOrder :exec
-INSERT INTO orders (user_id, number, status, uploaded_at)
-VALUES ($1, $2, $3, $4);
+INSERT INTO orders (user_id, number, status, accrual, uploaded_at)
+VALUES ($1, $2, $3, $4, $5);
 
 -- name: GetOrderByNumber :one
 SELECT id, user_id, number, status, accrual, uploaded_at
@@ -46,11 +46,15 @@ FOR UPDATE;
 
 -- name: UpdateBalance :exec
 UPDATE users
-SET balance = balance + $2, withdrawn = withdrawn + $3
+SET balance = $2
+WHERE id = $1;
+
+-- name: UpdateWithdrawn :exec
+UPDATE users
+SET withdrawn = $2
 WHERE id = $1;
 
 -- name: UpdateOrder :exec
 UPDATE orders
 SET status = $1, accrual = $2, uploaded_at = $3
 WHERE number = $4;
-

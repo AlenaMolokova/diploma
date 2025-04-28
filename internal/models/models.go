@@ -6,14 +6,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type User struct {
-	ID        int64
-	Login     string
-	Password  string
-	Balance   pgtype.Float8
-	Withdrawn pgtype.Float8
-}
-
 type Order struct {
 	ID         int64
 	UserID     int64
@@ -23,6 +15,14 @@ type Order struct {
 	UploadedAt pgtype.Timestamptz
 }
 
+type User struct {
+	ID        int64
+	Login     string
+	Password  string
+	Balance   pgtype.Float8
+	Withdrawn pgtype.Float8
+}
+
 type Withdrawal struct {
 	UserID      int64
 	OrderNumber string
@@ -30,14 +30,19 @@ type Withdrawal struct {
 	ProcessedAt pgtype.Timestamptz
 }
 
-type UserStorage interface {
-	CreateUser(ctx context.Context, login, password string) (int64, error)
-	GetUserByLogin(ctx context.Context, login string) (User, error)
+type OrderStorage interface {
+	CreateOrder(ctx context.Context, order Order) error
+	GetOrderByNumber(ctx context.Context, number string) (Order, error)
+	GetAllOrders(ctx context.Context) ([]Order, error)
+	UpdateOrder(ctx context.Context, order Order) error
+	GetOrdersByUserID(ctx context.Context, userID int64) ([]Order, error)
 }
 
 type BalanceStorage interface {
-	GetBalance(ctx context.Context, userID int64) (pgtype.Float8, pgtype.Float8, error)
-	UpdateBalance(ctx context.Context, userID int64, amount float64, withdrawn ...float64) error
+	GetBalance(ctx context.Context, userID int64) (current pgtype.Float8, withdrawn pgtype.Float8, err error)
+	UpdateBalance(ctx context.Context, userID int64, current float64) error
+	UpdateWithdrawn(ctx context.Context, userID int64, withdrawn float64) error
+	CreateWithdrawal(ctx context.Context, withdrawal Withdrawal) error
 }
 
 type WithdrawalStorage interface {
@@ -45,10 +50,7 @@ type WithdrawalStorage interface {
 	GetWithdrawalsByUserID(ctx context.Context, userID int64) ([]Withdrawal, error)
 }
 
-type OrderStorage interface {
-	CreateOrder(ctx context.Context, order Order) error
-	GetOrderByNumber(ctx context.Context, number string) (Order, error)
-	GetOrdersByUserID(ctx context.Context, userID int64) ([]Order, error)
-	GetAllOrders(ctx context.Context) ([]Order, error)
-	UpdateOrder(ctx context.Context, order Order) error
+type UserStorage interface {
+	CreateUser(ctx context.Context, login, password string) (int64, error)
+	GetUserByLogin(ctx context.Context, login string) (User, error)
 }

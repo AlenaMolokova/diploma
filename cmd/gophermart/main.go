@@ -8,15 +8,17 @@ import (
 	"os"
 
 	"github.com/AlenaMolokova/diploma/internal/config"
+	"github.com/AlenaMolokova/diploma/internal/handlers"
 	"github.com/AlenaMolokova/diploma/internal/loyalty"
+	"github.com/AlenaMolokova/diploma/internal/middleware"
 	"github.com/AlenaMolokova/diploma/internal/models"
-	"github.com/AlenaMolokova/diploma/internal/router"
 	"github.com/AlenaMolokova/diploma/internal/storage"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/go-chi/chi/v5"
 )
 
 func applyMigrations(databaseURI string) error {
@@ -85,7 +87,19 @@ func main() {
 		log.Println("JWT_SECRET not set, using default")
 	}
 
-	r := router.SetupRoutes(store, jwtSecret, cfg.AccrualAddr)
+	r := chi.NewRouter()
+	
+	r.Post("/api/user/register", handlers.NewRegisterHandler(store, jwtSecret).ServeHTTP)
+	r.Post("/api/user/login", handlers.NewLoginHandler(store, jwtSecret).ServeHTTP)
+	
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.AuthMiddleware(jwtSecret))
+		r.Post("/api/user/orders", handlers.NewOrderHandler(store, store, loyaltyClient).ServeHTTP)
+		r.Get("/api/user/orders", handlers.NewOrderGetHandler(store).ServeHTTP)
+		r.Get("/api/user/balance", handlers.NewBalanceHandler(store).ServeHTTP)
+		r.Post("/api/user/balance/withdraw", handlers.NewWithdrawHandler(store, store).ServeHTTP)
+		r.Get("/api/user/withdrawals", handlers.NewWithdrawalsHandler(store).ServeHTTP)
+	})
 
 	var orderStore models.OrderStorage = store
 	go loyaltyClient.StartOrderProcessing(context.Background(), orderStore)

@@ -66,16 +66,34 @@ func (h *WithdrawHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		utils.WriteJSONError(w, http.StatusInternalServerError, "Internal server error")
 		return
 	}
-	if current.Float64 < req.Sum {
-		log.Printf("Insufficient balance for user %d: current=%.2f, requested=%.2f", userID, current.Float64, req.Sum)
+	
+	currentBalance := 0.0
+	if current.Valid {
+		currentBalance = current.Float64
+	}
+	
+	if currentBalance < req.Sum {
+		log.Printf("Insufficient balance for user %d: current=%.2f, requested=%.2f", userID, currentBalance, req.Sum)
 		utils.WriteJSONError(w, http.StatusPaymentRequired, "Insufficient balance")
 		return
 	}
 
-	newBalance := current.Float64 - req.Sum
-	newWithdrawn := withdrawn.Float64 + req.Sum
-	if err := h.balance.UpdateBalance(r.Context(), userID, newBalance, newWithdrawn); err != nil {
+	newBalance := currentBalance - req.Sum
+	newWithdrawn := 0.0
+	if withdrawn.Valid {
+		newWithdrawn = withdrawn.Float64 + req.Sum
+	} else {
+		newWithdrawn = req.Sum
+	}
+	
+	if err := h.balance.UpdateBalance(r.Context(), userID, newBalance); err != nil {
 		log.Printf("Failed to update balance for user %d: %v", userID, err)
+		utils.WriteJSONError(w, http.StatusInternalServerError, "Internal server error")
+		return
+	}
+	
+	if err := h.balance.UpdateWithdrawn(r.Context(), userID, newWithdrawn); err != nil {
+		log.Printf("Failed to update withdrawn for user %d: %v", userID, err)
 		utils.WriteJSONError(w, http.StatusInternalServerError, "Internal server error")
 		return
 	}

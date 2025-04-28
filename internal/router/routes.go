@@ -1,6 +1,8 @@
 package router
 
 import (
+	"net/http"
+	
 	"github.com/AlenaMolokova/diploma/internal/handlers"
 	"github.com/AlenaMolokova/diploma/internal/loyalty"
 	"github.com/AlenaMolokova/diploma/internal/middleware"
@@ -26,7 +28,7 @@ func SetupRoutes(store *storage.Storage, jwtSecret, loyaltyURL string) *chi.Mux 
 	r.Post(UserPrefix+LoginPath, handlers.NewLoginHandler(store, jwtSecret).ServeHTTP)
 
 	r.Group(func(r chi.Router) {
-		r.Use(middleware.AuthMiddleware(jwtSecret)) // Исправлено: Auth → AuthMiddleware
+		r.Use(middleware.AuthMiddleware(jwtSecret))
 		r.Post(UserPrefix+OrdersPath, handlers.NewOrderHandler(store, store, loyaltyClient).ServeHTTP)
 		r.Get(UserPrefix+OrdersPath, handlers.NewOrderGetHandler(store).ServeHTTP)
 		r.Get(UserPrefix+BalancePath, handlers.NewBalanceHandler(store).ServeHTTP)

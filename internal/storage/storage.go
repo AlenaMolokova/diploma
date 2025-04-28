@@ -10,6 +10,12 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const (
+	queryUpdateBalance = "UPDATE users SET balance = $2 WHERE id = $1"
+	queryUpdateWithdrawn = "UPDATE users SET withdrawn = $2 WHERE id = $1"
+	queryCreateOrder = "INSERT INTO orders (user_id, number, status, accrual, uploaded_at) VALUES ($1, $2, $3, $4, $5)"
+)
+
 type Storage struct {
 	db      *pgxpool.Pool
 	queries *Queries
@@ -59,25 +65,24 @@ func (s *Storage) GetBalance(ctx context.Context, userID int64) (pgtype.Float8, 
 	return bal.Balance, bal.Withdrawn, nil
 }
 
-func (s *Storage) UpdateBalance(ctx context.Context, userID int64, amount float64, withdrawn ...float64) error {
-	var withdrawnVal float64
-	if len(withdrawn) > 0 {
-		withdrawnVal = withdrawn[0]
-	}
-	return s.queries.UpdateBalance(ctx, UpdateBalanceParams{
-		ID:        userID,
-		Balance:   pgtype.Float8{Float64: amount, Valid: true},
-		Withdrawn: pgtype.Float8{Float64: withdrawnVal, Valid: true},
-	})
+func (s *Storage) UpdateBalance(ctx context.Context, userID int64, amount float64) error {
+	_, err := s.db.Exec(ctx, queryUpdateBalance, userID, amount)
+	return err
+}
+
+func (s *Storage) UpdateWithdrawn(ctx context.Context, userID int64, withdrawn float64) error {
+	_, err := s.db.Exec(ctx, queryUpdateWithdrawn, userID, withdrawn)
+	return err
 }
 
 func (s *Storage) CreateOrder(ctx context.Context, order models.Order) error {
-	return s.queries.CreateOrder(ctx, CreateOrderParams{
-		UserID:     pgtype.Int8{Int64: order.UserID, Valid: true},
-		Number:     order.Number,
-		Status:     order.Status,
-		UploadedAt: order.UploadedAt,
-	})
+	_, err := s.db.Exec(ctx, queryCreateOrder,
+		order.UserID,
+		order.Number,
+		order.Status,
+		order.Accrual,
+		order.UploadedAt)
+	return err
 }
 
 func (s *Storage) GetOrderByNumber(ctx context.Context, number string) (models.Order, error) {
