@@ -2,54 +2,19 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"log"
 	"net/http"
-	"os"
 
 	"github.com/AlenaMolokova/diploma/internal/config"
 	"github.com/AlenaMolokova/diploma/internal/handlers"
 	"github.com/AlenaMolokova/diploma/internal/loyalty"
 	"github.com/AlenaMolokova/diploma/internal/middleware"
-	"github.com/AlenaMolokova/diploma/internal/models"
+	"github.com/AlenaMolokova/diploma/internal/migrations"
 	"github.com/AlenaMolokova/diploma/internal/storage"
-	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
-	"github.com/jackc/pgx/v5/pgxpool"
-	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/AlenaMolokova/diploma/internal/usecase"
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-func applyMigrations(databaseURI string) error {
-	db, err := sql.Open("pgx", databaseURI)
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
-	driver, err := postgres.WithInstance(db, &postgres.Config{})
-	if err != nil {
-		return err
-	}
-
-	m, err := migrate.NewWithDatabaseInstance(
-		"file://migrations",
-		"postgres",
-		driver,
-	)
-	if err != nil {
-		return err
-	}
-
-	err = m.Up()
-	if err != nil && err != migrate.ErrNoChange {
-		return err
-	}
-
-	log.Println("Database migrations applied successfully")
-	return nil
-}
 
 func main() {
 	cfg, err := config.NewConfig()
@@ -57,14 +22,7 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	if cfg.DatabaseURI == "" {
-		cfg.DatabaseURI = "postgres://postgres:postgres@localhost:5432/praktikum?sslmode=disable"
-		log.Printf("DatabaseURI was empty, using default: %s", cfg.DatabaseURI)
-	}
-
-	log.Printf("Using DatabaseURI: %s", cfg.DatabaseURI)
-
-	if err := applyMigrations(cfg.DatabaseURI); err != nil {
+	if err := migrations.Apply(cfg.DatabaseURI); err != nil {
 		log.Fatalf("Failed to apply migrations: %v", err)
 	}
 
@@ -80,29 +38,35 @@ func main() {
 	}
 
 	loyaltyClient := loyalty.NewClient(cfg.AccrualAddr)
+	loyaltyClient.SetPollInterval(cfg.PollIntervalSec)
 
-	jwtSecret := os.Getenv("JWT_SECRET")
-	if jwtSecret == "" {
-		jwtSecret = "supersecretkey"
-		log.Println("JWT_SECRET not set, using default")
-	}
+	balanceUC := usecase.NewBalanceUseCase(store)
+	withdrawalUC := usecase.NewWithdrawalUseCase(store, balanceUC)
+	orderUC := usecase.NewOrderUseCase(store, loyaltyClient, balanceUC)
+
+	registerHandler := handlers.NewRegisterHandler(store, cfg.JWTSecret)
+	loginHandler := handlers.NewLoginHandler(store, cfg.JWTSecret)
+	orderHandler := handlers.NewOrderHandler(orderUC)
+	orderGetHandler := handlers.NewOrderGetHandler(store)
+	balanceHandler := handlers.NewBalanceHandler(balanceUC)
+	withdrawHandler := handlers.NewWithdrawHandler(withdrawalUC)
+	withdrawalsHandler := handlers.NewWithdrawalsHandler(withdrawalUC)
 
 	r := chi.NewRouter()
 	
-	r.Post("/api/user/register", handlers.NewRegisterHandler(store, jwtSecret).ServeHTTP)
-	r.Post("/api/user/login", handlers.NewLoginHandler(store, jwtSecret).ServeHTTP)
+	r.Post("/api/user/register", registerHandler.ServeHTTP)
+	r.Post("/api/user/login", loginHandler.ServeHTTP)
 	
 	r.Group(func(r chi.Router) {
-		r.Use(middleware.AuthMiddleware(jwtSecret))
-		r.Post("/api/user/orders", handlers.NewOrderHandler(store, store, loyaltyClient).ServeHTTP)
-		r.Get("/api/user/orders", handlers.NewOrderGetHandler(store).ServeHTTP)
-		r.Get("/api/user/balance", handlers.NewBalanceHandler(store).ServeHTTP)
-		r.Post("/api/user/balance/withdraw", handlers.NewWithdrawHandler(store, store).ServeHTTP)
-		r.Get("/api/user/withdrawals", handlers.NewWithdrawalsHandler(store).ServeHTTP)
+		r.Use(middleware.AuthMiddleware(cfg.JWTSecret))
+		r.Post("/api/user/orders", orderHandler.ServeHTTP)
+		r.Get("/api/user/orders", orderGetHandler.ServeHTTP)
+		r.Get("/api/user/balance", balanceHandler.ServeHTTP)
+		r.Post("/api/user/balance/withdraw", withdrawHandler.ServeHTTP)
+		r.Get("/api/user/withdrawals", withdrawalsHandler.ServeHTTP)
 	})
 
-	var orderStore models.OrderStorage = store
-	go loyaltyClient.StartOrderProcessing(context.Background(), orderStore)
+	go loyaltyClient.StartOrderProcessing(context.Background(), store)
 
 	log.Printf("Starting Gophermart server on %s", cfg.RunAddr)
 	if err := http.ListenAndServe(cfg.RunAddr, r); err != nil {

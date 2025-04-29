@@ -5,17 +5,17 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/AlenaMolokova/diploma/internal/models"
 	"github.com/AlenaMolokova/diploma/internal/middleware"
+	"github.com/AlenaMolokova/diploma/internal/usecase"
 	"github.com/AlenaMolokova/diploma/internal/utils"
 )
 
 type BalanceHandler struct {
-	store models.BalanceStorage
+	balanceUC *usecase.BalanceUseCase
 }
 
-func NewBalanceHandler(store models.BalanceStorage) *BalanceHandler {
-	return &BalanceHandler{store: store}
+func NewBalanceHandler(balanceUC *usecase.BalanceUseCase) *BalanceHandler {
+	return &BalanceHandler{balanceUC: balanceUC}
 }
 
 func (h *BalanceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -26,7 +26,7 @@ func (h *BalanceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	current, withdrawn, err := h.store.GetBalance(r.Context(), userID)
+	current, withdrawn, err := h.balanceUC.GetUserBalance(r.Context(), userID)
 	if err != nil {
 		log.Printf("Failed to get balance for user %d: %v", userID, err)
 		utils.WriteJSONError(w, http.StatusInternalServerError, "Internal server error")
@@ -34,14 +34,8 @@ func (h *BalanceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := map[string]float64{
-		"current":   0.0,
-		"withdrawn": 0.0,
-	}
-	if current.Valid {
-		response["current"] = current.Float64
-	}
-	if withdrawn.Valid {
-		response["withdrawn"] = withdrawn.Float64
+		"current":   current,
+		"withdrawn": withdrawn,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -49,5 +43,5 @@ func (h *BalanceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		log.Printf("Failed to encode balance response: %v", err)
 	}
-	log.Printf("Returned balance current=%.2f, withdrawn=%.2f for user %d", response["current"], response["withdrawn"], userID)
+	log.Printf("Returned balance current=%.2f, withdrawn=%.2f for user %d", current, withdrawn, userID)
 }

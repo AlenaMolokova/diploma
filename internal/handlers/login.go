@@ -1,24 +1,29 @@
 package handlers
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"log"
 	"net/http"
 	"time"
-	"database/sql"
 
-	"github.com/AlenaMolokova/diploma/internal/utils"
 	"github.com/AlenaMolokova/diploma/internal/models"
+	"github.com/AlenaMolokova/diploma/internal/utils"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
+type UserGetter interface {
+	GetUserByLogin(ctx context.Context, login string) (models.User, error)
+}
+
 type LoginHandler struct {
-	store     models.UserStorage
+	store     UserGetter
 	jwtSecret string
 }
 
-func NewLoginHandler(store models.UserStorage, jwtSecret string) *LoginHandler {
+func NewLoginHandler(store UserGetter, jwtSecret string) *LoginHandler {
 	return &LoginHandler{store: store, jwtSecret: jwtSecret}
 }
 

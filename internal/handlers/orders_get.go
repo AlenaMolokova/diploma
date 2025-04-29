@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -11,11 +12,15 @@ import (
 	"github.com/AlenaMolokova/diploma/internal/utils"
 )
 
-type OrderGetHandler struct {
-	store models.OrderStorage
+type OrderGetter interface {
+	GetOrdersByUserID(ctx context.Context, userID int64) ([]models.Order, error)
 }
 
-func NewOrderGetHandler(store models.OrderStorage) *OrderGetHandler {
+type OrderGetHandler struct {
+	store OrderGetter
+}
+
+func NewOrderGetHandler(store OrderGetter) *OrderGetHandler {
 	return &OrderGetHandler{store: store}
 }
 

@@ -6,21 +6,18 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/AlenaMolokova/diploma/internal/middleware"
-	"github.com/AlenaMolokova/diploma/internal/models"
+	"github.com/AlenaMolokova/diploma/internal/usecase"
 	"github.com/AlenaMolokova/diploma/internal/utils"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type WithdrawHandler struct {
-	balance models.BalanceStorage
-	store   models.WithdrawalStorage
+	withdrawalUC *usecase.WithdrawalUseCase
 }
 
-func NewWithdrawHandler(balance models.BalanceStorage, store models.WithdrawalStorage) *WithdrawHandler {
-	return &WithdrawHandler{balance: balance, store: store}
+func NewWithdrawHandler(withdrawalUC *usecase.WithdrawalUseCase) *WithdrawHandler {
+	return &WithdrawHandler{withdrawalUC: withdrawalUC}
 }
 
 func (h *WithdrawHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -60,52 +57,14 @@ func (h *WithdrawHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	current, withdrawn, err := h.balance.GetBalance(r.Context(), userID)
+	err := h.withdrawalUC.ProcessWithdrawal(r.Context(), userID, req.Order, req.Sum)
 	if err != nil {
-		log.Printf("Failed to get balance for user %d: %v", userID, err)
-		utils.WriteJSONError(w, http.StatusInternalServerError, "Internal server error")
-		return
-	}
-	
-	currentBalance := 0.0
-	if current.Valid {
-		currentBalance = current.Float64
-	}
-	
-	if currentBalance < req.Sum {
-		log.Printf("Insufficient balance for user %d: current=%.2f, requested=%.2f", userID, currentBalance, req.Sum)
-		utils.WriteJSONError(w, http.StatusPaymentRequired, "Insufficient balance")
-		return
-	}
-
-	newBalance := currentBalance - req.Sum
-	newWithdrawn := 0.0
-	if withdrawn.Valid {
-		newWithdrawn = withdrawn.Float64 + req.Sum
-	} else {
-		newWithdrawn = req.Sum
-	}
-	
-	if err := h.balance.UpdateBalance(r.Context(), userID, newBalance); err != nil {
-		log.Printf("Failed to update balance for user %d: %v", userID, err)
-		utils.WriteJSONError(w, http.StatusInternalServerError, "Internal server error")
-		return
-	}
-	
-	if err := h.balance.UpdateWithdrawn(r.Context(), userID, newWithdrawn); err != nil {
-		log.Printf("Failed to update withdrawn for user %d: %v", userID, err)
-		utils.WriteJSONError(w, http.StatusInternalServerError, "Internal server error")
-		return
-	}
-
-	withdrawal := models.Withdrawal{
-		UserID:      userID,
-		OrderNumber: req.Order,
-		Sum:         pgtype.Float8{Float64: req.Sum, Valid: true},
-		ProcessedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
-	}
-	if err := h.store.CreateWithdrawal(r.Context(), withdrawal); err != nil {
-		log.Printf("Failed to create withdrawal for user %d: %v", userID, err)
+		if err.Error() == "insufficient balance" {
+			log.Printf("Insufficient balance for user %d: requested=%.2f", userID, req.Sum)
+			utils.WriteJSONError(w, http.StatusPaymentRequired, "Insufficient balance")
+			return
+		}
+		log.Printf("Failed to process withdrawal for user %d: %v", userID, err)
 		utils.WriteJSONError(w, http.StatusInternalServerError, "Internal server error")
 		return
 	}

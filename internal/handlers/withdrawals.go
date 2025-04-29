@@ -1,28 +1,33 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/AlenaMolokova/diploma/internal/middleware"
 	"github.com/AlenaMolokova/diploma/internal/models"
 	"github.com/AlenaMolokova/diploma/internal/utils"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type WithdrawalsHandler struct {
-	store models.WithdrawalStorage
+type WithdrawalUseCase interface {
+	GetUserWithdrawals(ctx context.Context, userID int64) ([]models.Withdrawal, error)
 }
 
-func NewWithdrawalsHandler(store models.WithdrawalStorage) *WithdrawalsHandler {
-	return &WithdrawalsHandler{store: store}
+type WithdrawalsHandler struct {
+	withdrawalUC WithdrawalUseCase
+}
+
+func NewWithdrawalsHandler(withdrawalUC WithdrawalUseCase) *WithdrawalsHandler {
+	return &WithdrawalsHandler{withdrawalUC: withdrawalUC}
 }
 
 type WithdrawalResponse struct {
-	Order       string             `json:"order"`
-	Sum         float64            `json:"sum"`
-	ProcessedAt pgtype.Timestamptz `json:"processed_at"`
+	Order       string `json:"order"`
+	Sum         float64 `json:"sum"`
+	ProcessedAt string `json:"processed_at"`
 }
 
 func (h *WithdrawalsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -33,7 +38,7 @@ func (h *WithdrawalsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	withdrawals, err := h.store.GetWithdrawalsByUserID(r.Context(), userID)
+	withdrawals, err := h.withdrawalUC.GetUserWithdrawals(r.Context(), userID)
 	if err != nil {
 		log.Printf("Failed to get withdrawals for user %d: %v", userID, err)
 		utils.WriteJSONError(w, http.StatusInternalServerError, "Internal server error")
@@ -48,11 +53,11 @@ func (h *WithdrawalsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := make([]WithdrawalResponse, len(withdrawals))
-	for i, w := range withdrawals {
+	for i, withdrawal := range withdrawals {
 		response[i] = WithdrawalResponse{
-			Order:       w.OrderNumber,
-			Sum:         w.Sum.Float64,
-			ProcessedAt: w.ProcessedAt,
+			Order:       withdrawal.OrderNumber,
+			Sum:         withdrawal.Sum.Float64,
+			ProcessedAt: withdrawal.ProcessedAt.Time.Format(time.RFC3339),
 		}
 	}
 

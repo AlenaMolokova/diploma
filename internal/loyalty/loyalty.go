@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/AlenaMolokova/diploma/internal/constants"
 	"github.com/AlenaMolokova/diploma/internal/models"
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -19,9 +20,20 @@ var (
 	ErrOrderProcessing = fmt.Errorf("order is still processing")
 )
 
+type OrderStorage interface {
+	GetAllOrders(ctx context.Context) ([]models.Order, error)
+	UpdateOrder(ctx context.Context, order models.Order) error
+}
+
+type BalanceUpdater interface {
+	GetBalance(ctx context.Context, userID int64) (pgtype.Float8, pgtype.Float8, error)
+	UpdateBalance(ctx context.Context, userID int64, amount float64) error
+}
+
 type Client struct {
-	baseURL string
-	client  *http.Client
+	baseURL      string
+	client       *http.Client
+	pollInterval time.Duration
 }
 
 func NewClient(baseURL string) *Client {
@@ -30,7 +42,12 @@ func NewClient(baseURL string) *Client {
 		client: &http.Client{
 			Timeout: 10 * time.Second,
 		},
+		pollInterval: time.Duration(constants.DefaultPollInterval) * time.Second,
 	}
+}
+
+func (c *Client) SetPollInterval(seconds int) {
+	c.pollInterval = time.Duration(seconds) * time.Second
 }
 
 type accrualResponse struct {
@@ -69,75 +86,75 @@ func (c *Client) CheckOrder(ctx context.Context, orderNumber string) (*accrualRe
 	}
 }
 
-type balanceUpdater interface {
-	GetBalance(ctx context.Context, userID int64) (pgtype.Float8, pgtype.Float8, error)
-	UpdateBalance(ctx context.Context, userID int64, amount float64) error
-}
-
-func (c *Client) StartOrderProcessing(ctx context.Context, store models.OrderStorage) {
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-
-	balanceStore, ok := store.(balanceUpdater)
-	if !ok {
-		log.Println("Store does not implement balance update interface")
-	}
-
-	for {
+func (c *Client) StartOrderProcessing(ctx context.Context, store OrderStorage) {
+	log.Printf("Starting order processing with interval: %v", c.pollInterval)
+	
+	for ticker := time.NewTicker(c.pollInterval); ; {
 		select {
 		case <-ctx.Done():
+			ticker.Stop()
 			log.Println("Order processing stopped")
 			return
 		case <-ticker.C:
-			orders, err := store.GetAllOrders(ctx)
-			if err != nil {
-				log.Printf("Failed to get orders: %v", err)
-				continue
-			}
-
-			for _, order := range orders {
-				if order.Status == "PROCESSED" || order.Status == "INVALID" {
-					continue
-				}
-
-				resp, err := c.CheckOrder(ctx, order.Number)
-				if err != nil {
-					if errors.Is(err, ErrOrderProcessing) {
-						continue
-					}
-					log.Printf("Failed to check order %s: %v", order.Number, err)
-					continue
-				}
-
-				prevStatus := order.Status
-				updatedOrder := models.Order{
-					Number:     order.Number,
-					Status:     resp.Status,
-					Accrual:    pgtype.Float8{Float64: resp.Accrual, Valid: resp.Accrual > 0},
-					UploadedAt: order.UploadedAt,
-				}
-
-				if err := store.UpdateOrder(ctx, updatedOrder); err != nil {
-					log.Printf("Failed to update order %s: %v", order.Number, err)
-					continue
-				}
-
-				log.Printf("Updated order %s: status=%s, accrual=%.2f", order.Number, resp.Status, resp.Accrual)
-
-				if ok && resp.Status == "PROCESSED" && prevStatus != "PROCESSED" && resp.Accrual > 0 {
-					if err := updateUserBalance(ctx, balanceStore, order.UserID, resp.Accrual); err != nil {
-						log.Printf("Failed to update balance for user %d: %v", order.UserID, err)
-					}
-				}
-			}
+			c.processOrders(ctx, store)
 		}
 	}
 }
 
-func updateUserBalance(ctx context.Context, store balanceUpdater, userID int64, accrual float64) error {
+func (c *Client) processOrders(ctx context.Context, store OrderStorage) {
+	orders, err := store.GetAllOrders(ctx)
+	if err != nil {
+		log.Printf("Failed to get orders: %v", err)
+		return
+	}
+
+	for _, order := range orders {
+		c.processOrder(ctx, store, order)
+	}
+}
+
+func (c *Client) processOrder(ctx context.Context, store OrderStorage, order models.Order) {
+	if order.Status == constants.StatusProcessed || order.Status == constants.StatusInvalid {
+		return
+	}
+
+	resp, err := c.CheckOrder(ctx, order.Number)
+	if err != nil {
+		if errors.Is(err, ErrOrderProcessing) {
+			return
+		}
+		log.Printf("Failed to check order %s: %v", order.Number, err)
+		return
+	}
+
+	prevStatus := order.Status
+	updatedOrder := models.Order{
+		ID:         order.ID,
+		UserID:     order.UserID,
+		Number:     order.Number,
+		Status:     resp.Status,
+		Accrual:    pgtype.Float8{Float64: resp.Accrual, Valid: resp.Accrual > 0},
+		UploadedAt: order.UploadedAt,
+	}
+
+	if err := store.UpdateOrder(ctx, updatedOrder); err != nil {
+		log.Printf("Failed to update order %s: %v", order.Number, err)
+		return
+	}
+
+	log.Printf("Updated order %s: status=%s, accrual=%.2f", order.Number, resp.Status, resp.Accrual)
+
+	balanceStore, ok := store.(BalanceUpdater)
+	if ok && resp.Status == constants.StatusProcessed && prevStatus != constants.StatusProcessed && resp.Accrual > 0 {
+		c.updateUserBalance(ctx, balanceStore, order.UserID, resp.Accrual)
+	}
+}
+
+func (c *Client) updateUserBalance(ctx context.Context, store BalanceUpdater, userID int64, accrual float64) {
 	current, _, err := store.GetBalance(ctx, userID)
 	if err != nil {
-		return fmt.Errorf("failed to get current balance: %w", err)
+		log.Printf("Failed to get current balance: %v", err)
+		return
 	}
 
 	newBalance := accrual
@@ -146,9 +163,9 @@ func updateUserBalance(ctx context.Context, store balanceUpdater, userID int64, 
 	}
 
 	if err := store.UpdateBalance(ctx, userID, newBalance); err != nil {
-		return fmt.Errorf("failed to update balance: %w", err)
+		log.Printf("Failed to update balance: %v", err)
+		return
 	}
 
 	log.Printf("Updated balance for user %d: added %.2f, new balance: %.2f", userID, accrual, newBalance)
-	return nil
 }
