@@ -39,5 +39,6 @@ func SetupRoutes(store *storage.Storage, jwtSecret, loyaltyURL string) *chi.Mux 
 		r.Get(UserPrefix+WithdrawalsPath, handlers.NewWithdrawalsHandler(withdrawalUC).ServeHTTP)
 	})
 
+	
 	return r
 }
