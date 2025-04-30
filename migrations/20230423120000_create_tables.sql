@@ -1,0 +1,36 @@
+-- +migrate Up
+CREATE TABLE IF NOT EXISTS users (
+    id BIGSERIAL PRIMARY KEY,
+    login TEXT NOT NULL UNIQUE,
+    password TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS orders (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id),
+    number TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL,
+    accrual DOUBLE PRECISION,
+    uploaded_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS balances (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL UNIQUE REFERENCES users(id),
+    balance DOUBLE PRECISION NOT NULL DEFAULT 0,
+    withdrawn DOUBLE PRECISION NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS withdrawals (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id),
+    order_number TEXT NOT NULL,
+    sum DOUBLE PRECISION NOT NULL,
+    processed_at TIMESTAMPTZ NOT NULL
+);
+
+-- +migrate Down
+DROP TABLE IF EXISTS withdrawals;
+DROP TABLE IF EXISTS balances;
+DROP TABLE IF EXISTS orders;
+DROP TABLE IF EXISTS users;
