@@ -50,13 +50,13 @@ func (c *Client) SetPollInterval(seconds int) {
 	c.pollInterval = time.Duration(seconds) * time.Second
 }
 
-type accrualResponse struct {
+type AccrualResponse struct {
 	Order   string  `json:"order"`
 	Status  string  `json:"status"`
 	Accrual float64 `json:"accrual,omitempty"`
 }
 
-func (c *Client) CheckOrder(ctx context.Context, orderNumber string) (*accrualResponse, error) {
+func (c *Client) checkOrderInternal(ctx context.Context, orderNumber string) (*AccrualResponse, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"/api/orders/"+orderNumber, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request for order %s: %v", orderNumber, err)
@@ -70,7 +70,7 @@ func (c *Client) CheckOrder(ctx context.Context, orderNumber string) (*accrualRe
 
 	switch resp.StatusCode {
 	case http.StatusOK:
-		var accrual accrualResponse
+		var accrual AccrualResponse
 		if err := json.NewDecoder(resp.Body).Decode(&accrual); err != nil {
 			return nil, fmt.Errorf("failed to decode response for order %s: %v", orderNumber, err)
 		}
@@ -86,9 +86,22 @@ func (c *Client) CheckOrder(ctx context.Context, orderNumber string) (*accrualRe
 	}
 }
 
+func (c *Client) CheckOrder(ctx context.Context, orderNumber string) (*models.LoyaltyResponse, error) {
+	resp, err := c.checkOrderInternal(ctx, orderNumber)
+	if err != nil {
+		return nil, err
+	}
+
+	return &models.LoyaltyResponse{
+		Order:   resp.Order,
+		Status:  resp.Status,
+		Accrual: resp.Accrual,
+	}, nil
+}
+
 func (c *Client) StartOrderProcessing(ctx context.Context, store OrderStorage) {
 	log.Printf("Starting order processing with interval: %v", c.pollInterval)
-	
+
 	for ticker := time.NewTicker(c.pollInterval); ; {
 		select {
 		case <-ctx.Done():
@@ -118,7 +131,7 @@ func (c *Client) processOrder(ctx context.Context, store OrderStorage, order mod
 		return
 	}
 
-	resp, err := c.CheckOrder(ctx, order.Number)
+	resp, err := c.checkOrderInternal(ctx, order.Number)
 	if err != nil {
 		if errors.Is(err, ErrOrderProcessing) {
 			return

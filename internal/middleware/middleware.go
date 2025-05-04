@@ -13,7 +13,7 @@ import (
 
 type UserID string
 
-type userKey struct{}
+type UserKey struct{}
 
 func AuthMiddleware(secret string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -66,14 +66,14 @@ func AuthMiddleware(secret string) func(http.Handler) http.Handler {
 			userData := map[UserID]interface{}{
 				UserID("id"): userID,
 			}
-			ctx := context.WithValue(r.Context(), userKey{}, userData)
+			ctx := context.WithValue(r.Context(), UserKey{}, userData)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }
 
 func GetUserID(r *http.Request) (int64, bool) {
-	userData, ok := r.Context().Value(userKey{}).(map[UserID]interface{})
+	userData, ok := r.Context().Value(UserKey{}).(map[UserID]interface{})
 	if !ok {
 		return 0, false
 	}

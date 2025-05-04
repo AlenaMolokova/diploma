@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/AlenaMolokova/diploma/internal/constants"
-	"github.com/AlenaMolokova/diploma/internal/loyalty"
 	"github.com/AlenaMolokova/diploma/internal/models"
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -23,16 +22,15 @@ type OrderStorage interface {
 	GetOrderByNumber(ctx context.Context, number string) (models.Order, error)
 	GetOrdersByUserID(ctx context.Context, userID int64) ([]models.Order, error)
 	UpdateOrder(ctx context.Context, order models.Order) error
-	GetAllOrders(ctx context.Context) ([]models.Order, error)
 }
 
 type OrderUseCase struct {
 	storage      OrderStorage
-	loyaltyCheck *loyalty.Client
+	loyaltyCheck LoyaltyChecker
 	balanceUC    *BalanceUseCase
 }
 
-func NewOrderUseCase(storage OrderStorage, loyaltyCheck *loyalty.Client, balanceUC *BalanceUseCase) *OrderUseCase {
+func NewOrderUseCase(storage OrderStorage, loyaltyCheck LoyaltyChecker, balanceUC *BalanceUseCase) *OrderUseCase {
 	return &OrderUseCase{
 		storage:      storage,
 		loyaltyCheck: loyaltyCheck,
@@ -50,7 +48,7 @@ func (uc *OrderUseCase) ProcessNewOrder(ctx context.Context, userID int64, order
 	}
 
 	loyaltyResp, err := uc.loyaltyCheck.CheckOrder(ctx, orderNumber)
-	
+
 	order := models.Order{
 		UserID:     userID,
 		Number:     orderNumber,
@@ -93,10 +91,10 @@ func (uc *OrderUseCase) UpdateOrderStatus(ctx context.Context, order models.Orde
 		return fmt.Errorf("failed to update order: %w", err)
 	}
 
-	if order.Status == constants.StatusProcessed && 
-	   prevStatus != constants.StatusProcessed && 
-	   order.Accrual.Valid && 
-	   order.Accrual.Float64 > 0 {
+	if order.Status == constants.StatusProcessed &&
+		prevStatus != constants.StatusProcessed &&
+		order.Accrual.Valid &&
+		order.Accrual.Float64 > 0 {
 		if err := uc.balanceUC.AddToBalance(ctx, order.UserID, order.Accrual.Float64); err != nil {
 			return fmt.Errorf("failed to update balance for processed order: %w", err)
 		}
