@@ -11,10 +11,10 @@ import (
 )
 
 type BalanceHandler struct {
-	balanceUC *usecase.BalanceUseCase
+	balanceUC usecase.BalanceUseCase
 }
 
-func NewBalanceHandler(balanceUC *usecase.BalanceUseCase) *BalanceHandler {
+func NewBalanceHandler(balanceUC usecase.BalanceUseCase) *BalanceHandler {
 	return &BalanceHandler{balanceUC: balanceUC}
 }
 

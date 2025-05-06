@@ -13,15 +13,21 @@ type BalanceStorage interface {
 	UpdateWithdrawn(ctx context.Context, userID int64, withdrawn float64) error
 }
 
-type BalanceUseCase struct {
+type BalanceUseCase interface {
+	GetUserBalance(ctx context.Context, userID int64) (current, withdrawn float64, err error)
+	AddToBalance(ctx context.Context, userID int64, amount float64) error
+	WithdrawFromBalance(ctx context.Context, userID int64, amount float64, orderNumber string) error
+}
+
+type balanceUseCase struct {
 	storage BalanceStorage
 }
 
-func NewBalanceUseCase(storage BalanceStorage) *BalanceUseCase {
-	return &BalanceUseCase{storage: storage}
+func NewBalanceUseCase(storage BalanceStorage) BalanceUseCase {
+	return &balanceUseCase{storage: storage}
 }
 
-func (u *BalanceUseCase) GetUserBalance(ctx context.Context, userID int64) (current, withdrawn float64, err error) {
+func (u *balanceUseCase) GetUserBalance(ctx context.Context, userID int64) (current, withdrawn float64, err error) {
 	currentPgx, withdrawnPgx, err := u.storage.GetBalance(ctx, userID)
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to get balance: %w", err)
@@ -40,7 +46,7 @@ func (u *BalanceUseCase) GetUserBalance(ctx context.Context, userID int64) (curr
 	return current, withdrawn, nil
 }
 
-func (u *BalanceUseCase) AddToBalance(ctx context.Context, userID int64, amount float64) error {
+func (u *balanceUseCase) AddToBalance(ctx context.Context, userID int64, amount float64) error {
 	if amount <= 0 {
 		return fmt.Errorf("amount must be positive")
 	}
@@ -58,7 +64,7 @@ func (u *BalanceUseCase) AddToBalance(ctx context.Context, userID int64, amount 
 	return u.storage.UpdateBalance(ctx, userID, newBalance)
 }
 
-func (u *BalanceUseCase) WithdrawFromBalance(ctx context.Context, userID int64, amount float64, orderNumber string) error {
+func (u *balanceUseCase) WithdrawFromBalance(ctx context.Context, userID int64, amount float64, orderNumber string) error {
 	if amount <= 0 {
 		return fmt.Errorf("withdrawal amount must be positive")
 	}

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/AlenaMolokova/diploma/internal/utils"
+	"github.com/AlenaMolokova/diploma/internal/validation"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -17,21 +18,17 @@ type UserCreator interface {
 }
 
 type RegisterHandler struct {
-	store  UserCreator
-	secret string
+	store     UserCreator
+	secret    string
+	validator validation.PasswordValidator
 }
 
 func NewRegisterHandler(store UserCreator, secret string) *RegisterHandler {
-	return &RegisterHandler{store: store, secret: secret}
-}
-
-func isValidPassword(password string) bool {
-	if len(password) < 8 {
-		log.Printf("Password validation failed: length %d < 8", len(password))
-		return false
+	return &RegisterHandler{
+		store:     store,
+		secret:    secret,
+		validator: validation.NewDefaultPasswordValidator(),
 	}
-	log.Printf("Password validation passed: %s", password)
-	return true
 }
 
 func (h *RegisterHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -53,7 +50,7 @@ func (h *RegisterHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !isValidPassword(req.Password) {
+	if !h.validator.ValidatePassword(req.Password) {
 		log.Printf("Invalid password for login %s: must be >=8 chars", req.Login)
 		utils.WriteJSONError(w, http.StatusBadRequest, "Password must be at least 8 characters long")
 		return

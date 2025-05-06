@@ -53,10 +53,10 @@ func main() {
 	withdrawalsHandler := handlers.NewWithdrawalsHandler(withdrawalUC)
 
 	r := chi.NewRouter()
-	
+
 	r.Post("/api/user/register", registerHandler.ServeHTTP)
 	r.Post("/api/user/login", loginHandler.ServeHTTP)
-	
+
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.AuthMiddleware(cfg.JWTSecret))
 		r.Post("/api/user/orders", orderHandler.ServeHTTP)

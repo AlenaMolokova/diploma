@@ -10,14 +10,19 @@ import (
 	"github.com/AlenaMolokova/diploma/internal/middleware"
 	"github.com/AlenaMolokova/diploma/internal/usecase"
 	"github.com/AlenaMolokova/diploma/internal/utils"
+	"github.com/AlenaMolokova/diploma/internal/validation"
 )
 
 type OrderHandler struct {
-	orderUC *usecase.OrderUseCase
+	orderUC   *usecase.OrderUseCase
+	validator validation.OrderValidator
 }
 
 func NewOrderHandler(orderUC *usecase.OrderUseCase) *OrderHandler {
-	return &OrderHandler{orderUC: orderUC}
+	return &OrderHandler{
+		orderUC:   orderUC,
+		validator: validation.NewLuhnValidator(),
+	}
 }
 
 func (h *OrderHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -43,8 +48,8 @@ func (h *OrderHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !utils.LuhnCheck(orderNumber) {
-		log.Printf("Order number '%s' failed Luhn check", orderNumber)
+	if !h.validator.ValidateOrderNumber(orderNumber) {
+		log.Printf("Order number '%s' failed validation", orderNumber)
 		utils.WriteJSONError(w, http.StatusUnprocessableEntity, "Invalid order number")
 		return
 	}

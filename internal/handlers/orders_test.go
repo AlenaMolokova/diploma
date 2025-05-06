@@ -154,6 +154,15 @@ func TestOrderHandlerServeHTTP(t *testing.T) {
 			expectedBody:   `{"error":"Invalid order number"}`,
 		},
 		{
+			name:   "нечисловой номер заказа",
+			body:   "123abc",
+			userID: userID,
+			setupMocks: func(os *testutils.MockOrderStorage, lc *testutils.MockLoyaltyClient, bs *testutils.MockBalanceStorage) {
+			},
+			expectedStatus: http.StatusUnprocessableEntity,
+			expectedBody:   `{"error":"Invalid order number"}`,
+		},
+		{
 			name:   "заказ уже существует",
 			body:   validOrderNumber,
 			userID: userID,

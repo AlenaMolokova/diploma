@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/AlenaMolokova/diploma/internal/models"
+	"github.com/AlenaMolokova/diploma/internal/validation"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -15,20 +16,26 @@ type WithdrawalStorage interface {
 }
 
 type WithdrawalUseCase struct {
-	storage    WithdrawalStorage
-	balanceUC  *BalanceUseCase
+	storage   WithdrawalStorage
+	balanceUC BalanceUseCase
+	validator validation.OrderValidator
 }
 
-func NewWithdrawalUseCase(storage WithdrawalStorage, balanceUC *BalanceUseCase) *WithdrawalUseCase {
+func NewWithdrawalUseCase(storage WithdrawalStorage, balanceUC BalanceUseCase) *WithdrawalUseCase {
 	return &WithdrawalUseCase{
-		storage:    storage,
-		balanceUC:  balanceUC,
+		storage:   storage,
+		balanceUC: balanceUC,
+		validator: validation.NewLuhnValidator(),
 	}
 }
 
 func (uc *WithdrawalUseCase) ProcessWithdrawal(ctx context.Context, userID int64, orderNumber string, amount float64) error {
 	if amount <= 0 {
 		return fmt.Errorf("withdrawal amount must be positive")
+	}
+
+	if !uc.validator.ValidateOrderNumber(orderNumber) {
+		return fmt.Errorf("invalid order number")
 	}
 
 	if err := uc.balanceUC.WithdrawFromBalance(ctx, userID, amount, orderNumber); err != nil {
@@ -54,6 +61,6 @@ func (uc *WithdrawalUseCase) GetUserWithdrawals(ctx context.Context, userID int6
 	if err != nil {
 		return nil, fmt.Errorf("failed to get withdrawals: %w", err)
 	}
-	
+
 	return withdrawals, nil
 }

@@ -27,10 +27,10 @@ type OrderStorage interface {
 type OrderUseCase struct {
 	storage      OrderStorage
 	loyaltyCheck LoyaltyChecker
-	balanceUC    *BalanceUseCase
+	balanceUC    BalanceUseCase
 }
 
-func NewOrderUseCase(storage OrderStorage, loyaltyCheck LoyaltyChecker, balanceUC *BalanceUseCase) *OrderUseCase {
+func NewOrderUseCase(storage OrderStorage, loyaltyCheck LoyaltyChecker, balanceUC BalanceUseCase) *OrderUseCase {
 	return &OrderUseCase{
 		storage:      storage,
 		loyaltyCheck: loyaltyCheck,

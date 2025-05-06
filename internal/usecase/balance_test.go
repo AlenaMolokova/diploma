@@ -27,6 +27,23 @@ func TestGetUserBalance(t *testing.T) {
 	assert.Equal(t, 20.0, wd)
 }
 
+func TestGetUserBalance_ZeroBalance(t *testing.T) {
+	mockStorage := new(testutils.MockBalanceStorage)
+	uc := NewBalanceUseCase(mockStorage)
+
+	ctx := context.Background()
+	userID := int64(1)
+	current := pgtype.Float8{Valid: false}
+	withdrawn := pgtype.Float8{Valid: false}
+
+	mockStorage.On("GetBalance", mock.Anything, userID).Return(current, withdrawn, nil)
+
+	curr, wd, err := uc.GetUserBalance(ctx, userID)
+	assert.NoError(t, err)
+	assert.Equal(t, 0.0, curr)
+	assert.Equal(t, 0.0, wd)
+}
+
 func TestWithdrawFromBalance_Insufficient(t *testing.T) {
 	mockStorage := new(testutils.MockBalanceStorage)
 	uc := NewBalanceUseCase(mockStorage)

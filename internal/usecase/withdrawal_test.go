@@ -53,6 +53,13 @@ func TestProcessWithdrawal(t *testing.T) {
 			expectedErr: errors.New("insufficient balance"),
 		},
 		{
+			name:        "неверный номер заказа",
+			amount:      100.0,
+			orderNumber: "4532015112830367",
+			setupMocks:  func(ws *testutils.MockWithdrawalStorage, bs *testutils.MockBalanceStorage) {},
+			expectedErr: errors.New("invalid order number"),
+		},
+		{
 			name:        "ошибка записи списания",
 			amount:      100.0,
 			orderNumber: validOrderNumber,

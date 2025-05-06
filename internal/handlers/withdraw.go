@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"regexp"
-	"strings"
 
 	"github.com/AlenaMolokova/diploma/internal/middleware"
 	"github.com/AlenaMolokova/diploma/internal/usecase"
@@ -17,7 +15,9 @@ type WithdrawHandler struct {
 }
 
 func NewWithdrawHandler(withdrawalUC *usecase.WithdrawalUseCase) *WithdrawHandler {
-	return &WithdrawHandler{withdrawalUC: withdrawalUC}
+	return &WithdrawHandler{
+		withdrawalUC: withdrawalUC,
+	}
 }
 
 func (h *WithdrawHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -38,22 +38,9 @@ func (h *WithdrawHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req.Order = strings.TrimSpace(req.Order)
 	if req.Order == "" || req.Sum <= 0 {
 		log.Printf("Invalid withdraw request: order=%s, sum=%.2f", req.Order, req.Sum)
 		utils.WriteJSONError(w, http.StatusBadRequest, "Order and positive sum are required")
-		return
-	}
-
-	if !regexp.MustCompile(`^\d+$`).MatchString(req.Order) {
-		log.Printf("Invalid order number format: '%s'", req.Order)
-		utils.WriteJSONError(w, http.StatusUnprocessableEntity, "Order number must be digits")
-		return
-	}
-
-	if !utils.LuhnCheck(req.Order) {
-		log.Printf("Order number '%s' failed Luhn check", req.Order)
-		utils.WriteJSONError(w, http.StatusUnprocessableEntity, "Invalid order number")
 		return
 	}
 
@@ -62,6 +49,11 @@ func (h *WithdrawHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err.Error() == "insufficient balance" {
 			log.Printf("Insufficient balance for user %d: requested=%.2f", userID, req.Sum)
 			utils.WriteJSONError(w, http.StatusPaymentRequired, "Insufficient balance")
+			return
+		}
+		if err.Error() == "invalid order number" {
+			log.Printf("Invalid order number: '%s'", req.Order)
+			utils.WriteJSONError(w, http.StatusUnprocessableEntity, "Invalid order number")
 			return
 		}
 		log.Printf("Failed to process withdrawal for user %d: %v", userID, err)
